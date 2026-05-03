@@ -164,25 +164,42 @@ async function saveNotebook() {
   setStatus("Saved.");
 }
 
-function applyRunResult(result, runIndex) {
-  if (Array.isArray(result.outputs)) {
-    result.outputs.forEach((output, index) => {
+function assignExecutionCount(cell) {
+  executionCounter += 1;
+  cell.executionCount = executionCounter;
+}
+
+function applyRunResult(result, runIndex, options = {}) {
+  const isRunAll = options.runAll === true;
+  const target = Number.isInteger(result.run_index) ? result.run_index : runIndex;
+  const outputs = Array.isArray(result.outputs) ? result.outputs : [];
+
+  if (isRunAll) {
+    outputs.forEach((output, index) => {
       if (notebook.cells[index]) {
         notebook.cells[index].output = output;
-        notebook.cells[index].executionCount = executionCounter + index + 1;
+        assignExecutionCount(notebook.cells[index]);
       }
     });
-    executionCounter += result.outputs.length;
+  } else if (notebook.cells[target]) {
+    notebook.cells[target].output = outputs[target] || "";
+    assignExecutionCount(notebook.cells[target]);
   }
 
   if (!result.ok) {
-    const target = Number.isInteger(result.run_index) ? result.run_index : runIndex;
     if (notebook.cells[target]) {
-      notebook.cells[target].output = result.error || "Execution failed";
+      const existingOutput = notebook.cells[target].output;
+      const errorOutput = result.error || "Execution failed";
+      notebook.cells[target].output = existingOutput
+        ? `${existingOutput}\n${errorOutput}`
+        : errorOutput;
+      if (!Number.isInteger(notebook.cells[target].executionCount)) {
+        assignExecutionCount(notebook.cells[target]);
+      }
     }
     setStatus(result.error || "Execution failed", true);
   } else {
-    setStatus(`Ran through cell ${runIndex + 1}.`);
+    setStatus(isRunAll ? "Ran all cells." : `Ran cell ${runIndex + 1}.`);
   }
   render();
 }
@@ -207,7 +224,7 @@ async function runAll() {
     body: JSON.stringify(payloadForRun(index))
   });
   const result = await response.json();
-  applyRunResult(result, index);
+  applyRunResult(result, index, { runAll: true });
 }
 
 addButton.addEventListener("click", () => {
