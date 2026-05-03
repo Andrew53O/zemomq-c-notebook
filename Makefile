@@ -6,6 +6,7 @@ ZMQ_LIBS := $(shell $(PKG_CONFIG) --libs libzmq)
 
 BUILD_DIR := build
 BINARIES := server broker kernel_worker pair_signal_demo zero_copy_demo transport_bridge_demo
+PROTO_SRC := src/jupyter_proto.c
 
 .PHONY: all clean check-zmq
 
@@ -17,14 +18,14 @@ check-zmq:
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-$(BUILD_DIR)/server: src/server.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(ZMQ_CFLAGS) $< -o $@ $(ZMQ_LIBS) -pthread
+$(BUILD_DIR)/server: src/server.c $(PROTO_SRC) src/jupyter_proto.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(ZMQ_CFLAGS) src/server.c $(PROTO_SRC) -o $@ $(ZMQ_LIBS) -pthread
 
 $(BUILD_DIR)/broker: src/broker.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(ZMQ_CFLAGS) $< -o $@ $(ZMQ_LIBS) -pthread
 
-$(BUILD_DIR)/kernel_worker: src/kernel_worker.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(ZMQ_CFLAGS) $< -o $@ $(ZMQ_LIBS) -pthread
+$(BUILD_DIR)/kernel_worker: src/kernel_worker.c $(PROTO_SRC) src/jupyter_proto.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(ZMQ_CFLAGS) src/kernel_worker.c $(PROTO_SRC) -o $@ $(ZMQ_LIBS) -pthread
 
 $(BUILD_DIR)/pair_signal_demo: src/pair_signal_demo.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(ZMQ_CFLAGS) $< -o $@ $(ZMQ_LIBS) -pthread
