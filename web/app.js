@@ -4,6 +4,8 @@ const statusEl = document.querySelector("#status");
 const addButton = document.querySelector("#add-cell");
 const runAllButton = document.querySelector("#run-all");
 const saveButton = document.querySelector("#save");
+const interruptButton = document.querySelector("#interrupt");
+const shutdownButton = document.querySelector("#shutdown");
 
 const cKeywords = new Set([
   "auto", "break", "case", "const", "continue", "default", "do", "else",
@@ -19,7 +21,7 @@ const cTypes = new Set([
 const cFunctions = new Set([
   "printf", "fprintf", "snprintf", "malloc", "calloc", "realloc", "free",
   "memcpy", "memset", "strlen", "strcmp", "strdup", "system", "fopen",
-  "fclose", "fread", "fwrite", "zmq_ctx_new", "zmq_ctx_destroy",
+  "fclose", "fread", "fwrite", "nb_input", "zmq_ctx_new", "zmq_ctx_destroy",
   "zmq_socket", "zmq_close", "zmq_setsockopt", "zmq_getsockopt",
   "zmq_bind", "zmq_connect", "zmq_send", "zmq_recv", "zmq_msg_init",
   "zmq_msg_init_size", "zmq_msg_init_data", "zmq_msg_data",
@@ -33,6 +35,9 @@ let notebook = {
 };
 
 let executionCounter = 0;
+let lastEventId = 0;
+let activeRunIndex = null;
+let pollTimer = null;
 
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
@@ -108,7 +113,7 @@ function render() {
       syncHighlight(textarea, highlight);
     });
 
-    runButton.addEventListener("click", () => runCell(index));
+    runButton.addEventListener("click", () => runCell(index).catch((error) => setStatus(error.message, true)));
     deleteButton.addEventListener("click", () => {
       notebook.cells.splice(index, 1);
       if (notebook.cells.length === 0) {
@@ -124,6 +129,10 @@ function render() {
 
 function payloadForRun(runIndex) {
   return {
+    code: notebook.cells.slice(0, runIndex + 1).map((cell) => cell.code || "").join("\n"),
+    silent: false,
+    store_history: true,
+    allow_stdin: true,
     run_index: runIndex,
     cells: notebook.cells.map((cell) => cell.code || "")
   };
@@ -131,9 +140,7 @@ function payloadForRun(runIndex) {
 
 async function loadNotebook() {
   const response = await fetch("/api/notebook");
-  if (!response.ok) {
-    throw new Error("Failed to load notebook");
-  }
+  if (!response.ok) throw new Error("Failed to load notebook");
   notebook = await response.json();
   if (!Array.isArray(notebook.cells) || notebook.cells.length === 0) {
     notebook.cells = [defaultCell()];
@@ -158,53 +165,101 @@ async function saveNotebook() {
     body: JSON.stringify(notebook)
   });
   const result = await response.json();
-  if (!response.ok || !result.ok) {
-    throw new Error(result.error || "Save failed");
-  }
+  if (!response.ok || !result.ok) throw new Error(result.error || "Save failed");
   setStatus("Saved.");
 }
 
-function assignExecutionCount(cell) {
+function assignExecutionCount(cell, count) {
+  if (Number.isInteger(count)) {
+    cell.executionCount = count;
+    executionCounter = Math.max(executionCounter, count);
+    return;
+  }
   executionCounter += 1;
   cell.executionCount = executionCounter;
 }
 
-function applyRunResult(result, runIndex, options = {}) {
-  const isRunAll = options.runAll === true;
-  const target = Number.isInteger(result.run_index) ? result.run_index : runIndex;
-  const outputs = Array.isArray(result.outputs) ? result.outputs : [];
+function appendCellOutput(index, text) {
+  if (!notebook.cells[index]) return;
+  notebook.cells[index].output = `${notebook.cells[index].output || ""}${text}`;
+}
 
-  if (isRunAll) {
-    outputs.forEach((output, index) => {
-      if (notebook.cells[index]) {
-        notebook.cells[index].output = output;
-        assignExecutionCount(notebook.cells[index]);
-      }
-    });
-  } else if (notebook.cells[target]) {
-    notebook.cells[target].output = outputs[target] || "";
-    assignExecutionCount(notebook.cells[target]);
+function handleIopub(event) {
+  const content = event.content || {};
+  if (event.msg_type === "status") {
+    setStatus(`Kernel ${content.execution_state || "unknown"}.`);
+    if (content.execution_state === "idle") activeRunIndex = null;
+    return;
   }
 
-  if (!result.ok) {
-    if (notebook.cells[target]) {
-      const existingOutput = notebook.cells[target].output;
-      const errorOutput = result.error || "Execution failed";
-      notebook.cells[target].output = existingOutput
-        ? `${existingOutput}\n${errorOutput}`
-        : errorOutput;
-      if (!Number.isInteger(notebook.cells[target].executionCount)) {
-        assignExecutionCount(notebook.cells[target]);
-      }
+  if (event.msg_type === "stream") {
+    const index = Number.isInteger(content.cell_index) ? content.cell_index : activeRunIndex;
+    appendCellOutput(index, content.text || "");
+    render();
+    return;
+  }
+
+  if (event.msg_type === "error") {
+    const index = activeRunIndex ?? 0;
+    appendCellOutput(index, `${content.evalue || "Execution error"}\n`);
+    setStatus(content.evalue || "Execution error", true);
+    render();
+  }
+}
+
+function handleShell(event) {
+  const content = event.content || {};
+  if (event.msg_type !== "execute_reply") return;
+  const runIndex = Number.isInteger(content.run_index) ? content.run_index : activeRunIndex;
+  if (Number.isInteger(runIndex) && notebook.cells[runIndex]) {
+    assignExecutionCount(notebook.cells[runIndex], content.execution_count);
+    if (!notebook.cells[runIndex].output && Array.isArray(content.outputs)) {
+      notebook.cells[runIndex].output = content.outputs[runIndex] || "";
     }
-    setStatus(result.error || "Execution failed", true);
+  }
+  if (content.status === "error") {
+    setStatus(content.evalue || "Execution failed", true);
   } else {
-    setStatus(isRunAll ? "Ran all cells." : `Ran cell ${runIndex + 1}.`);
+    setStatus(`Ran cell ${(runIndex ?? 0) + 1}.`);
   }
   render();
 }
 
+async function handleStdin(event) {
+  if (event.msg_type !== "input_request") return;
+  const promptText = event.content?.prompt || "Input:";
+  const value = window.prompt(promptText, "");
+  await fetch("/api/stdin/reply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value: value ?? "" })
+  });
+}
+
+async function pollEvents() {
+  const response = await fetch(`/api/kernel/events?after=${lastEventId}`);
+  if (!response.ok) return;
+  const result = await response.json();
+  if (!Array.isArray(result.events)) return;
+  for (const event of result.events) {
+    if (Number.isInteger(event.id)) lastEventId = Math.max(lastEventId, event.id);
+    if (event.channel === "iopub") handleIopub(event);
+    if (event.channel === "shell") handleShell(event);
+    if (event.channel === "stdin") await handleStdin(event);
+  }
+}
+
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = window.setInterval(() => {
+    pollEvents().catch(() => {});
+  }, 300);
+}
+
 async function runCell(index) {
+  activeRunIndex = index;
+  if (notebook.cells[index]) notebook.cells[index].output = "";
+  render();
   setStatus(`Running cell ${index + 1}...`);
   const response = await fetch("/api/cell/run", {
     method: "POST",
@@ -212,19 +267,23 @@ async function runCell(index) {
     body: JSON.stringify(payloadForRun(index))
   });
   const result = await response.json();
-  applyRunResult(result, index);
+  if (!response.ok || !result.ok) throw new Error(result.error || "Failed to send execute_request");
+  startPolling();
 }
 
 async function runAll() {
-  const index = notebook.cells.length - 1;
-  setStatus("Running all cells...");
-  const response = await fetch("/api/run-all", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payloadForRun(index))
-  });
+  for (let i = 0; i < notebook.cells.length; i++) {
+    await runCell(i);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+}
+
+async function postControl(path, message) {
+  setStatus(message);
+  const response = await fetch(path, { method: "POST" });
   const result = await response.json();
-  applyRunResult(result, index, { runAll: true });
+  if (!response.ok || !result.ok) throw new Error(result.error || message);
+  startPolling();
 }
 
 addButton.addEventListener("click", () => {
@@ -240,8 +299,18 @@ runAllButton.addEventListener("click", () => {
   runAll().catch((error) => setStatus(error.message, true));
 });
 
+interruptButton.addEventListener("click", () => {
+  postControl("/api/kernel/interrupt", "Interrupt requested...").catch((error) => setStatus(error.message, true));
+});
+
+shutdownButton.addEventListener("click", () => {
+  postControl("/api/kernel/shutdown", "Shutdown requested...").catch((error) => setStatus(error.message, true));
+});
+
 loadNotebook().catch((error) => {
   notebook.cells = [defaultCell()];
   render();
   setStatus(error.message, true);
 });
+
+startPolling();
