@@ -102,28 +102,6 @@ p {
   background: #43a047;
 }
 
-.menubar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 0 12px;
-  min-height: 28px;
-  border-top: 1px solid #fff;
-}
-
-.menubar button {
-  border: 0;
-  background: transparent;
-  min-height: 26px;
-  padding: 0 9px;
-  color: var(--text);
-  cursor: default;
-}
-
-.menubar button:hover {
-  background: var(--chrome-strong);
-}
-
 .toolbar {
   display: flex;
   align-items: center;

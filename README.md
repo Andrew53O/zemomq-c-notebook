@@ -12,6 +12,15 @@ This project is a browser-based notebook clone for a Network Programming present
 
 The browser never executes code. The C server sends execution requests to the ZeroMQ broker, and the C worker performs compile/run work.
 
+## Notebook UI
+
+The browser UI is styled after classic Jupyter Notebook:
+
+- Notebook title and checkpoint-style header.
+- Compact toolbar with save, insert cell, run all, and cell type controls.
+- Code cells with `In [ ]:` prompts and output cells with `Out[ ]:` prompts.
+- Execution counters update when cells run through the C kernel worker.
+
 ## System Flowchart
 
 ```mermaid
