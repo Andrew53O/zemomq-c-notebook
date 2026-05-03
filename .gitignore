@@ -5,3 +5,5 @@ animation/.venv/
 animation/media/
 animation/__pycache__/
 *.pyc
+
+presentation/
