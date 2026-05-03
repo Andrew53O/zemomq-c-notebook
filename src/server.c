@@ -361,7 +361,7 @@ static void handle_api(int client, const char *method, const char *path, char *b
         size_t len = 0;
         char *data = read_file(NOTEBOOK_PATH, &len);
         if (!data) {
-            data = strdup("{\"title\":\"ZeroMQ Notebook Clone\",\"cells\":[{\"code\":\"printf(\\\"hello zeromq notebook\\\\n\\\");\",\"output\":\"\"}]}");
+            data = strdup("{\"title\":\"ZeroMQ Notebook Clone\",\"cells\":[{\"code\":\"int age;\\nprintf(\\\"Enter your age: \\\" );\\nscanf(\\\"%d\\\", &age);\\nprintf(\\\"age = %d\\\\n\\\", age);\",\"output\":\"\"}]}");
             len = strlen(data);
         }
         send_response(client, 200, "OK", "application/json; charset=utf-8", data, len);

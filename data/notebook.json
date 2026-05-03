@@ -2,16 +2,24 @@
   "title": "ZeroMQ Notebook Clone",
   "cells": [
     {
+      "code": "int age;\nprintf(\"Enter your age: \");\nscanf(\"%d\", &age);\nprintf(\"age = %d\\n\", age);",
+      "output": "",
+      "executionCount": null
+    },
+    {
+      "code": "printf(\"hello zeromq notebook\\n\");",
+      "output": "",
+      "executionCount": null
+    },
+    {
       "code": "int x = 42;\nprintf(\"x is ready\\n\");",
-      "output": ""
+      "output": "",
+      "executionCount": null
     },
     {
       "code": "printf(\"x = %d\\n\", x);",
-      "output": ""
-    },
-    {
-      "code": "for (int i = 0; i < 3; i++) {\n    printf(\"cell loop %d\\n\", i);\n}",
-      "output": ""
+      "output": "",
+      "executionCount": null
     }
   ]
 }

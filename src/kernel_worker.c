@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -93,6 +94,15 @@ static char *read_file(const char *path) {
     data[count] = '\0';
     fclose(file);
     return data;
+}
+
+static char *copy_range(const char *start, const char *end) {
+    size_t len = (size_t)(end - start);
+    char *out = calloc(len + 1, 1);
+    if (!out) return strdup("");
+    memcpy(out, start, len);
+    out[len] = '\0';
+    return out;
 }
 
 static int ensure_dirs(void) {
@@ -198,6 +208,7 @@ static int write_generated_source(const char *path, const struct cell_list *cell
         "#include <stdio.h>\n"
         "#include <stdlib.h>\n"
         "#include <string.h>\n"
+        "#include <stdarg.h>\n"
         "#include <math.h>\n\n"
         "static void nb_input(const char *prompt, char *buffer, size_t size) {\n"
         "    if (!buffer || size == 0) return;\n"
@@ -206,6 +217,18 @@ static int write_generated_source(const char *path, const struct cell_list *cell
         "    if (!fgets(buffer, (int)size, stdin)) { buffer[0] = '\\0'; return; }\n"
         "    buffer[strcspn(buffer, \"\\r\\n\")] = '\\0';\n"
         "}\n\n"
+        "static int nb_scanf(const char *format, ...) {\n"
+        "    char line[256];\n"
+        "    printf(\"__NB_INPUT__:\\n\");\n"
+        "    fflush(stdout);\n"
+        "    if (!fgets(line, sizeof line, stdin)) return EOF;\n"
+        "    va_list args;\n"
+        "    va_start(args, format);\n"
+        "    int rc = vsscanf(line, format, args);\n"
+        "    va_end(args);\n"
+        "    return rc;\n"
+        "}\n"
+        "#define scanf(...) nb_scanf(__VA_ARGS__)\n\n"
         "int main(void) {\n"
         "    setvbuf(stdout, NULL, _IONBF, 0);\n"
         "    setvbuf(stderr, NULL, _IONBF, 0);\n");
@@ -362,8 +385,13 @@ static void process_child_line(struct kernel_sockets *socks, const struct jp_mes
         *cell_index = -1;
         return;
     }
-    if (strncmp(line, "__NB_INPUT__:", 13) == 0) {
-        char *value = request_stdin(socks, parent, line + 13, child, interrupted);
+    char *input_marker = strstr(line, "__NB_INPUT__:");
+    if (input_marker) {
+        char *prefix = copy_range(line, input_marker);
+        const char *marker_prompt = input_marker + 13;
+        const char *prompt = *marker_prompt ? marker_prompt : prefix;
+        if (!*prompt) prompt = "Input:";
+        char *value = request_stdin(socks, parent, prompt, child, interrupted);
         if (child_stdin != -1 && value) {
             ssize_t ignored = write(child_stdin, value, strlen(value));
             (void)ignored;
@@ -371,6 +399,7 @@ static void process_child_line(struct kernel_sockets *socks, const struct jp_mes
             (void)ignored;
         }
         if (start) *start = time(NULL);
+        free(prefix);
         free(value);
         return;
     }

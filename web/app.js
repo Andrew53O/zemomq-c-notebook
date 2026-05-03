@@ -21,7 +21,7 @@ const cTypes = new Set([
 const cFunctions = new Set([
   "printf", "fprintf", "snprintf", "malloc", "calloc", "realloc", "free",
   "memcpy", "memset", "strlen", "strcmp", "strdup", "system", "fopen",
-  "fclose", "fread", "fwrite", "nb_input", "zmq_ctx_new", "zmq_ctx_destroy",
+  "fclose", "fread", "fwrite", "scanf", "nb_input", "zmq_ctx_new", "zmq_ctx_destroy",
   "zmq_socket", "zmq_close", "zmq_setsockopt", "zmq_getsockopt",
   "zmq_bind", "zmq_connect", "zmq_send", "zmq_recv", "zmq_msg_init",
   "zmq_msg_init_size", "zmq_msg_init_data", "zmq_msg_data",
@@ -38,6 +38,7 @@ let executionCounter = 0;
 let lastEventId = 0;
 let activeRunIndex = null;
 let pollTimer = null;
+const pendingRuns = new Map();
 
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
@@ -45,7 +46,11 @@ function setStatus(message, isError = false) {
 }
 
 function defaultCell() {
-  return { code: "printf(\"hello zeromq notebook\\n\");", output: "", executionCount: null };
+  return {
+    code: "int age;\nprintf(\"Enter your age: \");\nscanf(\"%d\", &age);\nprintf(\"age = %d\\n\", age);",
+    output: "",
+    executionCount: null
+  };
 }
 
 function escapeHtml(text) {
@@ -115,11 +120,13 @@ function render() {
 
     runButton.addEventListener("click", () => runCell(index).catch((error) => setStatus(error.message, true)));
     deleteButton.addEventListener("click", () => {
+      const scrollY = window.scrollY;
       notebook.cells.splice(index, 1);
       if (notebook.cells.length === 0) {
         notebook.cells.push(defaultCell());
       }
       render();
+      requestAnimationFrame(() => window.scrollTo(0, scrollY));
     });
 
     cellsEl.appendChild(node);
@@ -195,7 +202,9 @@ function handleIopub(event) {
   if (event.msg_type === "stream") {
     const index = Number.isInteger(content.cell_index) ? content.cell_index : activeRunIndex;
     appendCellOutput(index, content.text || "");
+    const scrollY = window.scrollY;
     render();
+    requestAnimationFrame(() => window.scrollTo(0, scrollY));
     return;
   }
 
@@ -203,7 +212,9 @@ function handleIopub(event) {
     const index = activeRunIndex ?? 0;
     appendCellOutput(index, `${content.evalue || "Execution error"}\n`);
     setStatus(content.evalue || "Execution error", true);
+    const scrollY = window.scrollY;
     render();
+    requestAnimationFrame(() => window.scrollTo(0, scrollY));
   }
 }
 
@@ -222,7 +233,18 @@ function handleShell(event) {
   } else {
     setStatus(`Ran cell ${(runIndex ?? 0) + 1}.`);
   }
+  const pending = pendingRuns.get(runIndex);
+  if (pending) {
+    pendingRuns.delete(runIndex);
+    if (content.status === "error") {
+      pending.reject(new Error(content.evalue || "Execution failed"));
+    } else {
+      pending.resolve(content);
+    }
+  }
+  const scrollY = window.scrollY;
   render();
+  requestAnimationFrame(() => window.scrollTo(0, scrollY));
 }
 
 async function handleStdin(event) {
@@ -261,20 +283,39 @@ async function runCell(index) {
   if (notebook.cells[index]) notebook.cells[index].output = "";
   render();
   setStatus(`Running cell ${index + 1}...`);
+  const runReply = new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      pendingRuns.delete(index);
+      reject(new Error(`Timed out waiting for cell ${index + 1} reply`));
+    }, 20000);
+    pendingRuns.set(index, {
+      resolve: (value) => {
+        window.clearTimeout(timeout);
+        resolve(value);
+      },
+      reject: (error) => {
+        window.clearTimeout(timeout);
+        reject(error);
+      }
+    });
+  });
   const response = await fetch("/api/cell/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payloadForRun(index))
   });
   const result = await response.json();
-  if (!response.ok || !result.ok) throw new Error(result.error || "Failed to send execute_request");
+  if (!response.ok || !result.ok) {
+    pendingRuns.delete(index);
+    throw new Error(result.error || "Failed to send execute_request");
+  }
   startPolling();
+  return runReply;
 }
 
 async function runAll() {
   for (let i = 0; i < notebook.cells.length; i++) {
     await runCell(i);
-    await new Promise((resolve) => setTimeout(resolve, 500));
   }
 }
 

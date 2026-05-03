@@ -193,7 +193,16 @@ sequenceDiagram
 
 Why it matters: Stdin demonstrates reverse interaction. The kernel is not only answering the browser; it can also ask the browser for data while code is running.
 
-Note: `nb_input()` is the supported classroom input API. Plain `scanf()` prompt detection is not guaranteed.
+For classroom convenience, generated notebook code also wraps simple `scanf(...)` calls. That means this common C example opens a browser prompt:
+
+```c
+int age;
+printf("Enter your age: ");
+scanf("%d", &age);
+printf("age = %d\n", age);
+```
+
+The kernel turns the pending prompt text into a Stdin `input_request`, then feeds the browser's answer back to the generated C process.
 
 ### Control Channel
 
@@ -413,20 +422,28 @@ The old `./build/broker` binary still exists as an optional ROUTER/DEALER shared
    printf("x = %d\n", x);
    ```
    Explain: running a later cell recompiles cells from the top.
-5. Run stdin:
+5. Run stdin with normal C-style input:
+   ```c
+   int age;
+   printf("Enter your age: ");
+   scanf("%d", &age);
+   printf("age = %d\n", age);
+   ```
+   Explain: the generated runtime wraps `scanf()` and sends a Stdin `input_request`.
+6. Or run stdin with the explicit helper:
    ```c
    char name[64];
    nb_input("Your name: ", name, sizeof name);
    printf("hello %s\n", name);
    ```
-   Explain: kernel sends Stdin `input_request`; browser replies with `input_reply`.
-6. Run an infinite loop:
+   Explain: `nb_input()` directly sends a Stdin `input_request`; browser replies with `input_reply`.
+7. Run an infinite loop:
    ```c
    while (1) {}
    ```
    Click Interrupt.
    Explain: Control has a separate high-priority route.
-7. Check heartbeat:
+8. Check heartbeat:
    ```bash
    curl http://127.0.0.1:8080/api/kernel/heartbeat
    ```
