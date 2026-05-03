@@ -241,7 +241,7 @@ main {
 
 .code-surface {
   position: relative;
-  min-height: 134px;
+  min-height: 39px;
   background: var(--code-bg);
 }
 
@@ -249,9 +249,9 @@ main {
 textarea {
   display: block;
   width: 100%;
-  min-height: 134px;
+  min-height: 39px;
   border: 0;
-  padding: 9px 11px;
+  padding: 8px 11px;
   font-family: "Courier New", Consolas, monospace;
   font-size: 15px;
   line-height: 1.45;
@@ -271,12 +271,12 @@ textarea {
 
 textarea {
   position: relative;
-  resize: vertical;
+  resize: none;
   outline: 0;
   background: transparent;
   color: transparent;
   caret-color: #111111;
-  overflow: auto;
+  overflow: hidden;
 }
 
 textarea:focus {

@@ -70,6 +70,9 @@ function highlightC(code) {
 }
 
 function syncHighlight(textarea, highlight) {
+  textarea.style.height = "auto";
+  textarea.style.height = `${textarea.scrollHeight}px`;
+  highlight.style.height = textarea.style.height;
   highlight.innerHTML = `${highlightC(textarea.value)}\n`;
   highlight.scrollTop = textarea.scrollTop;
   highlight.scrollLeft = textarea.scrollLeft;
