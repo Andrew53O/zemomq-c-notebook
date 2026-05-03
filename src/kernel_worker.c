@@ -352,7 +352,8 @@ static void append_output(char **outputs, int count, int cell_index, const char 
 
 static void process_child_line(struct kernel_sockets *socks, const struct jp_message *parent,
                                char **outputs, int output_count, int *cell_index,
-                               int child_stdin, pid_t child, int *interrupted, const char *line) {
+                               int child_stdin, pid_t child, int *interrupted, time_t *start,
+                               const char *line) {
     if (strncmp(line, "__CELL_START_", 13) == 0) {
         *cell_index = atoi(line + 13);
         return;
@@ -369,6 +370,7 @@ static void process_child_line(struct kernel_sockets *socks, const struct jp_mes
             ignored = write(child_stdin, "\n", 1);
             (void)ignored;
         }
+        if (start) *start = time(NULL);
         free(value);
         return;
     }
@@ -480,7 +482,7 @@ static struct exec_result execute_cells(struct kernel_sockets *socks, const stru
                     *newline = '\0';
                     if (newline > line_start && newline[-1] == '\r') newline[-1] = '\0';
                     process_child_line(socks, parent, result.outputs, result.output_count,
-                        &current_cell, in_pipe[1], child, &result.interrupted, line_start);
+                        &current_cell, in_pipe[1], child, &result.interrupted, &start, line_start);
                     line_start = newline + 1;
                 }
                 size_t remaining = strlen(line_start);
@@ -500,7 +502,7 @@ static struct exec_result execute_cells(struct kernel_sockets *socks, const stru
 
     if (pending.len > 0) {
         process_child_line(socks, parent, result.outputs, result.output_count,
-            &current_cell, in_pipe[1], child, &result.interrupted, pending.data);
+            &current_cell, in_pipe[1], child, &result.interrupted, &start, pending.data);
     }
 
     close(in_pipe[1]);
