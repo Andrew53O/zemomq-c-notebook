@@ -1,87 +1,143 @@
-# Mini Jupyter Notebook Clone Using C + ZeroMQ
+# ZMQBook C
 
-This project is a browser-based notebook clone for a Network Programming presentation. It is not a full Jupyter implementation. It demonstrates how ZeroMQ can connect a web-facing process to a broker and one or more execution workers.
+A tiny C notebook powered by ZeroMQ.
+
+This project is a browser-based mini notebook for a Network Programming presentation. It is not a full Jupyter implementation, but it now uses the same core ZeroMQ channel idea as a Jupyter kernel: Shell, IOPub, Stdin, Control, and Heartbeat.
+
+The browser UI is static HTML/CSS/JavaScript. The backend components are written in C and communicate through ZeroMQ.
 
 ## Architecture
 
-- `src/server.c` serves the browser UI and exposes small HTTP APIs.
-- `src/broker.c` is a ZeroMQ `ROUTER/DEALER` proxy using `zmq_proxy()`.
-- `src/kernel_worker.c` receives notebook cells, generates cumulative C source, compiles it, runs it with a timeout, and returns JSON results.
-- `web/` contains the static notebook UI.
-- `data/notebook.json` stores the saved notebook.
-- `animation/` contains a Manim scene for presenting the system flow.
-
-The browser never executes code. The C server sends execution requests to the ZeroMQ broker, and the C worker performs compile/run work.
-
-## Notebook UI
-
-The browser UI is styled after classic Jupyter Notebook:
-
-- Notebook title and checkpoint-style header.
-- Compact toolbar with save, insert cell, run all, and cell type controls.
-- Code cells with `In [ ]:` prompts and output cells with `Out[ ]:` prompts.
-- Execution counters update when cells run through the C kernel worker.
-
-## Simple Architecture Diagram
+The browser cannot open ZeroMQ sockets directly, so `src/server.c` acts as the browser-facing HTTP server and the frontend-side ZeroMQ bridge. `src/kernel_worker.c` is the educational C kernel.
 
 ```mermaid
 flowchart LR
-    Browser[Browser UI]
-    Server[C HTTP Server]
-    Broker[ZeroMQ ROUTER/DEALER Broker]
-    Worker[C Kernel Worker]
-    Runtime[Generated C Program]
-
-    Browser -->|run cell over HTTP| Server
-    Server -->|multipart RUN + JSON| Broker
-    Broker -->|shared queue route| Worker
-    Worker -->|gcc compile + timeout run| Runtime
-    Runtime -->|stdout / errors| Worker
-    Worker -->|RESULT + JSON| Broker
-    Broker -->|reply| Server
-    Server -->|display output| Browser
-```
-
-Execution flow:
-
-```text
-Browser
-  -> C HTTP Server
-  -> ZeroMQ ROUTER/DEALER Broker
-  -> C Kernel Worker
-  -> generated C program
-  -> output returns through ZeroMQ
-  -> Browser displays result
-```
-
-## Full Architecture Diagram
-
-```mermaid
-flowchart LR
-    Browser[Browser notebook UI<br/>HTML CSS JavaScript]
-    Server[C HTTP server<br/>src/server.c]
-    Broker[ZeroMQ broker<br/>ROUTER frontend + DEALER backend<br/>src/broker.c]
-    Worker1[C kernel worker<br/>REQ/REP service<br/>src/kernel_worker.c]
-    Worker2[Optional extra worker<br/>dynamic discovery]
-    Data[(data/notebook.json)]
-    Runtime[(runtime generated C<br/>compile output<br/>run output)]
-    Status[Status channel<br/>PUB/SUB topic envelope: kernel]
-    PairDemo[PAIR inproc thread signal<br/>src/pair_signal_demo.c]
-    ZeroCopy[Zero-copy message demo<br/>src/zero_copy_demo.c]
-    Bridge[TCP to IPC transport bridge<br/>src/transport_bridge_demo.c]
+    Browser["Browser Notebook UI<br/>HTML/CSS/JS"]
+    Server["C HTTP Server<br/>Frontend ZeroMQ Bridge"]
+    Kernel["C Kernel Worker<br/>Jupyter-style ZeroMQ sockets"]
+    Runtime["Generated C Program<br/>gcc + child process"]
 
     Browser -->|HTTP API| Server
-    Server <-->|multipart ZMQ_REQ frames<br/>RUN + JSON| Broker
-    Broker <-->|zmq_proxy shared queue| Worker1
-    Broker <-->|same backend endpoint| Worker2
-    Worker1 -->|gcc + timeout| Runtime
-    Server <-->|load/save JSON| Data
-    Worker1 -->|PUB topic: kernel| Status
-    Status -->|SUB drain/log| Server
-    PairDemo -.concept demo.-> Worker1
-    ZeroCopy -.message API demo.-> Worker1
-    Bridge -.transport demo.-> Broker
+    Server -->|Shell execute_request| Kernel
+    Kernel -->|IOPub stream/status/error| Server
+    Kernel -->|Stdin input_request| Server
+    Server -->|Stdin input_reply| Kernel
+    Server -->|Control interrupt/shutdown| Kernel
+    Server <-->|Heartbeat ping/pong| Kernel
+    Kernel -->|compile + run| Runtime
+    Runtime -->|stdout/stderr/stdin| Kernel
+    Server -->|poll events JSON| Browser
 ```
+
+## Jupyter-Style Socket Channels
+
+```mermaid
+flowchart TD
+    subgraph Frontend["C HTTP Server as Frontend Bridge"]
+        ShellClient["Shell DEALER"]
+        IOPubClient["IOPub SUB"]
+        StdinClient["Stdin DEALER"]
+        ControlClient["Control DEALER"]
+        HBClient["Heartbeat REQ"]
+    end
+
+    subgraph Kernel["C Kernel Worker"]
+        ShellKernel["Shell ROUTER<br/>tcp://127.0.0.1:7010"]
+        IOPubKernel["IOPub PUB<br/>tcp://127.0.0.1:7011"]
+        StdinKernel["Stdin ROUTER<br/>tcp://127.0.0.1:7012"]
+        ControlKernel["Control ROUTER<br/>tcp://127.0.0.1:7013"]
+        HBKernel["Heartbeat REP<br/>tcp://127.0.0.1:7014"]
+    end
+
+    ShellClient <--> ShellKernel
+    IOPubKernel --> IOPubClient
+    StdinKernel <--> StdinClient
+    ControlClient <--> ControlKernel
+    HBClient <--> HBKernel
+```
+
+| Channel | Socket pattern | Project behavior |
+| --- | --- | --- |
+| Shell | Frontend `DEALER`, kernel `ROUTER` | Sends `execute_request`, `kernel_info_request`, receives `execute_reply` |
+| IOPub | Kernel `PUB`, frontend `SUB` | Streams stdout, errors, `busy`/`idle`, and `execute_input` events |
+| Stdin | Kernel `ROUTER`, frontend `DEALER` | `nb_input()` sends `input_request`; browser prompt sends `input_reply` |
+| Control | Frontend `DEALER`, kernel `ROUTER` | Interrupts infinite loops and sends shutdown commands |
+| Heartbeat | Frontend `REQ`, kernel `REP` | Raw ping/pong liveness check |
+
+The connection file is written to:
+
+```text
+data/kernel-connection.json
+```
+
+It uses localhost TCP ports and an empty HMAC key for classroom simplicity.
+
+## How Execution Works
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant S as C Server Bridge
+    participant K as C Kernel Worker
+    participant R as Generated C Runtime
+
+    B->>S: POST /api/cell/run
+    S->>K: Shell execute_request
+    K-->>S: IOPub status busy
+    K-->>S: IOPub execute_input
+    K->>R: gcc compile + fork/exec
+    R-->>K: stdout/stderr
+    K-->>S: IOPub stream
+    K-->>S: Shell execute_reply
+    K-->>S: IOPub status idle
+    B->>S: GET /api/kernel/events
+    S-->>B: queued channel events
+```
+
+Cells are cumulative. Running cell `N` generates one C program containing cells `0..N`, so later cells can use variables from earlier cells.
+
+Example:
+
+```c
+int x = 42;
+```
+
+Then:
+
+```c
+printf("x = %d\n", x);
+```
+
+## Interactive Input
+
+Use `nb_input()` in notebook cells:
+
+```c
+char name[64];
+nb_input("Your name: ", name, sizeof name);
+printf("hello %s\n", name);
+```
+
+Flow:
+
+```mermaid
+sequenceDiagram
+    participant R as Generated C Runtime
+    participant K as Kernel Worker
+    participant S as C Server Bridge
+    participant B as Browser
+
+    R->>K: __NB_INPUT__:Your name:
+    K->>S: Stdin input_request
+    S->>B: event: input_request
+    B->>B: prompt modal
+    B->>S: POST /api/stdin/reply
+    S->>K: Stdin input_reply
+    K->>R: writes answer to child stdin
+    R->>K: continues execution
+```
+
+`nb_input()` is the supported classroom input API. Plain `scanf()` prompt detection is not guaranteed.
 
 ## Requirements
 
@@ -89,10 +145,14 @@ Use WSL Ubuntu.
 
 ```bash
 sudo apt update
-sudo apt install -y gcc make pkg-config libzmq3-dev coreutils
+sudo apt install -y gcc make pkg-config libzmq3-dev python3
 ```
 
-`coreutils` provides the `timeout` command used by the worker.
+Optional external-client smoke test:
+
+```bash
+pip install jupyter_client
+```
 
 ## Build
 
@@ -103,21 +163,15 @@ make
 
 ## Run
 
-Open three WSL terminals in this project directory.
+Open two WSL terminals in this project directory.
 
 Terminal 1:
-
-```bash
-./build/broker
-```
-
-Terminal 2:
 
 ```bash
 ./build/kernel_worker
 ```
 
-Terminal 3:
+Terminal 2:
 
 ```bash
 ./build/server
@@ -129,98 +183,133 @@ Then open:
 http://127.0.0.1:8080
 ```
 
-You can start multiple workers in separate terminals:
+The old `./build/broker` binary still exists as an optional ROUTER/DEALER shared-queue demo, but it is no longer required for the main notebook execution path.
 
-```bash
-./build/kernel_worker
-```
+## Browser API
 
-The broker will distribute requests through the shared queue pattern.
-
-Extra concept demos:
-
-```bash
-./build/pair_signal_demo
-./build/zero_copy_demo
-./build/transport_bridge_demo
-```
-
-## Presentation Animation
-
-The Manim source lives in `animation/architecture_animation.py`. It follows the same simple architecture diagram: Browser UI, C HTTP server, ZeroMQ broker, C kernel worker, and generated C program.
-
-Render with the local animation environment:
-
-```bash
-animation/.venv/bin/python -m manim -qm --media_dir animation/media animation/architecture_animation.py ZeroMQNotebookArchitecture
-```
-
-Expected local output:
-
-```text
-animation/media/videos/architecture_animation/720p30/ZeroMQNotebookArchitecture.mp4
-```
-
-The rendered MP4 is intentionally ignored and should not be committed.
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/notebook` | Load saved notebook JSON |
+| `POST /api/notebook/save` | Save notebook JSON |
+| `POST /api/cell/run` | Send Shell `execute_request` |
+| `POST /api/run-all` | Send execution requests from the UI |
+| `GET /api/kernel/events?after=N` | Poll queued Shell/IOPub/Stdin/Control events |
+| `POST /api/stdin/reply` | Send Stdin `input_reply` |
+| `POST /api/kernel/interrupt` | Send Control `interrupt_request` |
+| `POST /api/kernel/shutdown` | Send Control `shutdown_request` |
+| `GET /api/kernel/heartbeat` | Check Heartbeat ping/pong |
 
 ## Demo Script
 
-1. Load the browser page.
-2. Run the first cell:
+1. Start `kernel_worker` and `server`.
+2. Open the browser notebook.
+3. Run:
+   ```c
+   printf("hello zeromq notebook\n");
+   ```
+   Explain: Shell request starts execution; IOPub streams stdout.
+4. Run cumulative cells:
    ```c
    int x = 42;
-   printf("x is ready\n");
    ```
-3. Run the second cell:
+   then:
    ```c
    printf("x = %d\n", x);
    ```
-   This proves cumulative notebook execution.
-4. Add a compile error:
+   Explain: running a later cell recompiles cells from the top.
+5. Run stdin:
    ```c
-   printf("missing semicolon")
+   char name[64];
+   nb_input("Your name: ", name, sizeof name);
+   printf("hello %s\n", name);
    ```
-5. Add a timeout case:
+   Explain: kernel sends Stdin `input_request`; browser replies with `input_reply`.
+6. Run an infinite loop:
    ```c
    while (1) {}
    ```
-6. Stop the worker and run a cell to show the server reporting kernel unavailability.
-7. Start a second `kernel_worker` to show dynamic worker discovery through the broker.
-8. Run `pair_signal_demo` to show `PAIR` sockets and `inproc://` thread signaling.
-9. Run `zero_copy_demo` to show `zmq_msg_init_data()` and its free callback.
-10. Run `transport_bridge_demo` to show a `tcp://` to `ipc://` proxy bridge.
+   Click Interrupt.
+   Explain: Control socket is separate from Shell so high-priority commands can stop work.
+7. Check heartbeat:
+   ```bash
+   curl http://127.0.0.1:8080/api/kernel/heartbeat
+   ```
+
+## Smoke Test
+
+With `./build/kernel_worker` running:
+
+```bash
+python3 tests/smoke_jupyter_channels.py
+```
+
+The test uses `jupyter_client` and `data/kernel-connection.json` to verify:
+
+- Heartbeat ping.
+- `kernel_info_request`.
+- `execute_request`.
+- IOPub stream output.
+- Stdin request/reply.
 
 ## ZeroMQ Concepts Demonstrated
 
 | Presentation concept | Where it appears |
 | --- | --- |
-| Socket lifecycle: create/destroy | `zmq_ctx_new()`, `zmq_socket()`, `zmq_close()`, `zmq_ctx_destroy()` in `server.c`, `broker.c`, `kernel_worker.c`, and demos |
-| Configure sockets | `zmq_setsockopt()` for linger, timeouts, subscriptions, and high-water marks |
-| Check socket options | `zmq_getsockopt()` reads `ZMQ_SNDHWM` in `broker.c` and `ZMQ_RCVMORE` in multipart receive code |
-| Plug into topology | `zmq_bind()` in broker/server/status demos; `zmq_connect()` in server and workers |
-| Bind as server side | Broker binds `tcp://127.0.0.1:7000` and `tcp://127.0.0.1:7001`; server binds the PUB/SUB status endpoint |
-| Connect as client side | HTTP server connects to broker frontend; workers connect to broker backend |
-| Carry data with simple APIs | `zmq_send()` and `zmq_recv()` in status publishing and demo programs |
-| Carry data with message APIs | `zmq_msg_init_size()`, `zmq_msg_send()`, `zmq_msg_recv()`, `zmq_msg_close()` in `server.c` and `kernel_worker.c` |
-| Zero-copy messages | `zmq_msg_init_data()` fourth argument/free callback in `zero_copy_demo.c` |
-| High-water marks | `ZMQ_SNDHWM` and `ZMQ_RCVHWM` in `broker.c` |
-| I/O threads | The project uses one ZeroMQ context per process; this is where ZeroMQ manages I/O threads internally |
-| Unicast transports | Main app uses `tcp://`; PAIR demo uses `inproc://`; bridge demo uses `ipc://` |
-| ZeroMQ is not a neutral carrier | Socket type controls behavior: `REQ` must send then receive; `REP` must receive then send; `PUB` only publishes; `SUB` filters topics |
-| REQ/REP pattern | `server.c` uses `ZMQ_REQ`; `kernel_worker.c` uses `ZMQ_REP` |
-| PUB/SUB envelopes | Worker publishes multipart `kernel` topic messages; server subscribes to topic `kernel` |
-| PAIR pattern | `pair_signal_demo.c` coordinates main thread and worker thread over `inproc://` |
-| ROUTER/DEALER shared queue | `broker.c` uses `ZMQ_ROUTER` frontend and `ZMQ_DEALER` backend |
-| Intermediary/proxy | `broker.c` and `transport_bridge_demo.c` use `zmq_proxy()` |
-| Dynamic discovery problem | New `kernel_worker` processes can connect without browser/server changes |
-| Handling multiple sockets | `kernel_worker.c` uses `zmq_poll()` before receiving execution requests; server drains status with `zmq_poll()` |
-| Multipart messages | Server sends `RUN` + JSON frames; worker replies `RESULT` + JSON frames |
-| Multithreading with ZeroMQ | `pair_signal_demo.c` gives each thread its own socket |
-| Signaling between threads | `PAIR` over `inproc://node-control` in `pair_signal_demo.c` |
-| Node coordination | Main thread sends `start-node`; worker replies `worker-ack` in `pair_signal_demo.c` |
-| Transport bridging | `transport_bridge_demo.c` bridges `tcp://127.0.0.1:7010` to `ipc:///tmp/zeromq-notebook-bridge.ipc` |
-| Error handling | `zmq_errno()` and `zmq_strerror()` are used for ZeroMQ failures |
-| Interrupt handling | `SIGINT`, `SIGTERM`, and `EINTR` handling in long-running processes |
+| Socket lifecycle | Context/socket creation and cleanup in `server.c`, `kernel_worker.c`, and demos |
+| Configure sockets | Linger, identity, subscribe filters, and timeouts |
+| Bind/connect topology | Kernel binds five channels; server connects as frontend bridge |
+| Shell request/reply | `execute_request`, `kernel_info_request`, `execute_reply` |
+| IOPub publish/subscribe | stdout/stderr/status/error stream to browser event polling |
+| Stdin ROUTER/DEALER | `nb_input()` requests browser input and receives replies |
+| Control ROUTER/DEALER | Interrupt and shutdown commands avoid the Shell execution path |
+| Heartbeat REQ/REP | Raw liveness ping/pong |
+| Multipart messages | Jupyter wire frames include identities, delimiter, signature, header, parent, metadata, content |
+| Message envelopes | IOPub topic frames such as `stream.stdout`, `status`, `error` |
+| Error handling | Compile errors, runtime errors, timeout, interrupt, and ZeroMQ errors |
+| Interrupt handling | `SIGINT`, `SIGTERM`, control-channel interrupt, and clean socket close |
+| ROUTER/DEALER proxy | Optional `broker.c` demo remains for shared queue / intermediary presentation |
+| PAIR / zero-copy / transport bridge | Extra demo binaries remain available |
+
+## Difference From Full Jupyter
+
+This project implements the educational core of the Jupyter ZeroMQ architecture, not the complete Jupyter ecosystem.
+
+Included:
+
+- Five Jupyter-style sockets.
+- Jupyter multipart frame shape.
+- Empty-signature messages.
+- Basic `jupyter_client` compatibility for simple requests.
+
+Not included:
+
+- JupyterLab kernelspec launch integration.
+- HMAC signing with a non-empty key.
+- Completion, inspection, rich display MIME bundles, widgets, comms, debugger, or history APIs.
+- A secure sandbox. This is trusted local code execution only.
+
+## Presentation Animation
+
+The Manim source lives in `animation/architecture_animation.py`.
+
+Render with:
+
+```bash
+animation/.venv/bin/python -m manim -qm --media_dir animation/media animation/architecture_animation.py ZeroMQNotebookArchitecture
+```
+
+Rendered video output is intentionally ignored and should not be committed.
+
+## Extra Concept Demos
+
+```bash
+./build/broker
+./build/pair_signal_demo
+./build/zero_copy_demo
+./build/transport_bridge_demo
+```
+
+These support the presentation topics around ROUTER/DEALER proxies, PAIR signaling, zero-copy messages, and transport bridging.
 
 ## Safety Note
 
