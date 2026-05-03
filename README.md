@@ -21,34 +21,24 @@ The browser UI is styled after classic Jupyter Notebook:
 - Code cells with `In [ ]:` prompts and output cells with `Out[ ]:` prompts.
 - Execution counters update when cells run through the C kernel worker.
 
-## System Flowchart
+## Simple Architecture Diagram
 
 ```mermaid
 flowchart LR
-    Browser[Browser Notebook UI<br/>HTML / CSS / JavaScript]
-    Server[C HTTP Server<br/>src/server.c<br/>Serves UI + REST API]
-    Broker[ZeroMQ Broker<br/>src/broker.c<br/>ROUTER / DEALER + zmq_proxy]
-    Worker[C Kernel Worker<br/>src/kernel_worker.c<br/>Compiles and runs C cells]
-    Data[(Notebook Save File<br/>data/notebook.json)]
-    Runtime[(Runtime Files<br/>generated C / binary / output)]
-    Status[Status Channel<br/>PUB / SUB topic: kernel]
+    Browser[Browser UI]
+    Server[C HTTP Server]
+    Broker[ZeroMQ ROUTER/DEALER Broker]
+    Worker[C Kernel Worker]
+    Runtime[Generated C Program]
 
-    Browser -->|HTTP GET / POST| Server
-    Server -->|load / save notebook| Data
-    Data -->|saved cells| Server
-
-    Server -->|ZMQ multipart request<br/>RUN + JSON| Broker
-    Broker -->|shared queue routing| Worker
-
-    Worker -->|generate C source<br/>gcc compile<br/>timeout run| Runtime
+    Browser -->|run cell over HTTP| Server
+    Server -->|multipart RUN + JSON| Broker
+    Broker -->|shared queue route| Worker
+    Worker -->|gcc compile + timeout run| Runtime
     Runtime -->|stdout / errors| Worker
-
-    Worker -->|ZMQ multipart reply<br/>RESULT + JSON| Broker
+    Worker -->|RESULT + JSON| Broker
     Broker -->|reply| Server
-    Server -->|JSON output| Browser
-
-    Worker -->|PUB status events| Status
-    Status -->|SUB status messages| Server
+    Server -->|display output| Browser
 ```
 
 Execution flow:
