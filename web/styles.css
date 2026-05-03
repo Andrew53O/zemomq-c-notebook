@@ -280,7 +280,7 @@ textarea {
 }
 
 textarea:focus {
-  background: rgba(255, 255, 255, 0.62);
+  background: transparent;
 }
 
 .tok-keyword {

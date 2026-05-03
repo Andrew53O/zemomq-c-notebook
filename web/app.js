@@ -71,7 +71,8 @@ function highlightC(code) {
 
 function syncHighlight(textarea, highlight) {
   textarea.style.height = "auto";
-  textarea.style.height = `${textarea.scrollHeight}px`;
+  const nextHeight = Math.max(textarea.scrollHeight, 39);
+  textarea.style.height = `${nextHeight}px`;
   highlight.style.height = textarea.style.height;
   highlight.innerHTML = `${highlightC(textarea.value)}\n`;
   highlight.scrollTop = textarea.scrollTop;
@@ -97,7 +98,6 @@ function render() {
     outputPrompt.textContent = cell.output ? `Out[${count}]:` : "";
     textarea.value = cell.code || "";
     output.textContent = cell.output || "";
-    syncHighlight(textarea, highlight);
 
     textarea.addEventListener("input", () => {
       cell.code = textarea.value;
@@ -118,6 +118,7 @@ function render() {
     });
 
     cellsEl.appendChild(node);
+    syncHighlight(textarea, highlight);
   });
 }
 
