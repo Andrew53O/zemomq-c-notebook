@@ -258,6 +258,19 @@ async function handleStdin(event) {
   });
 }
 
+function handleControl(event) {
+  if (event.msg_type === "interrupt_reply") {
+    setStatus("Kernel interrupt delivered.");
+    return;
+  }
+  if (event.msg_type === "shutdown_reply") {
+    activeRunIndex = null;
+    pendingRuns.forEach((pending) => pending.reject(new Error("Kernel shut down")));
+    pendingRuns.clear();
+    setStatus("Kernel shut down. Restart ./build/kernel_worker to run more cells.", true);
+  }
+}
+
 async function pollEvents() {
   const response = await fetch(`/api/kernel/events?after=${lastEventId}`);
   if (!response.ok) return;
@@ -268,6 +281,7 @@ async function pollEvents() {
     if (event.channel === "iopub") handleIopub(event);
     if (event.channel === "shell") handleShell(event);
     if (event.channel === "stdin") await handleStdin(event);
+    if (event.channel === "control") handleControl(event);
   }
 }
 
@@ -325,6 +339,9 @@ async function postControl(path, message) {
   const result = await response.json();
   if (!response.ok || !result.ok) throw new Error(result.error || message);
   startPolling();
+  window.setTimeout(() => {
+    pollEvents().catch(() => {});
+  }, 250);
 }
 
 addButton.addEventListener("click", () => {

@@ -210,6 +210,8 @@ static int write_generated_source(const char *path, const struct cell_list *cell
         "#include <string.h>\n"
         "#include <stdarg.h>\n"
         "#include <math.h>\n\n"
+        "static int __nb_current_cell = -1;\n"
+        "static int __nb_run_index = %d;\n"
         "static void nb_input(const char *prompt, char *buffer, size_t size) {\n"
         "    if (!buffer || size == 0) return;\n"
         "    printf(\"__NB_INPUT__:%%s\\n\", prompt ? prompt : \"\");\n"
@@ -219,9 +221,13 @@ static int write_generated_source(const char *path, const struct cell_list *cell
         "}\n\n"
         "static int nb_scanf(const char *format, ...) {\n"
         "    char line[256];\n"
-        "    printf(\"__NB_INPUT__:\\n\");\n"
-        "    fflush(stdout);\n"
-        "    if (!fgets(line, sizeof line, stdin)) return EOF;\n"
+        "    if (__nb_current_cell == __nb_run_index) {\n"
+        "        printf(\"__NB_INPUT__:\\n\");\n"
+        "        fflush(stdout);\n"
+        "        if (!fgets(line, sizeof line, stdin)) return EOF;\n"
+        "    } else {\n"
+        "        snprintf(line, sizeof line, \"0\");\n"
+        "    }\n"
         "    va_list args;\n"
         "    va_start(args, format);\n"
         "    int rc = vsscanf(line, format, args);\n"
@@ -231,9 +237,11 @@ static int write_generated_source(const char *path, const struct cell_list *cell
         "#define scanf(...) nb_scanf(__VA_ARGS__)\n\n"
         "int main(void) {\n"
         "    setvbuf(stdout, NULL, _IONBF, 0);\n"
-        "    setvbuf(stderr, NULL, _IONBF, 0);\n");
+        "    setvbuf(stderr, NULL, _IONBF, 0);\n",
+        run_index);
 
     for (int i = 0; i <= run_index; i++) {
+        fprintf(file, "    __nb_current_cell = %d;\n", i);
         fprintf(file, "    printf(\"__CELL_START_%d__\\n\");\n", i);
         fprintf(file, "#line 1 \"cell_%d.c\"\n", i + 1);
         fprintf(file, "%s\n", cells->items[i]);
@@ -376,7 +384,7 @@ static void append_output(char **outputs, int count, int cell_index, const char 
 static void process_child_line(struct kernel_sockets *socks, const struct jp_message *parent,
                                char **outputs, int output_count, int *cell_index,
                                int child_stdin, pid_t child, int *interrupted, time_t *start,
-                               const char *line) {
+                               int run_index, const char *line) {
     if (strncmp(line, "__CELL_START_", 13) == 0) {
         *cell_index = atoi(line + 13);
         return;
@@ -406,8 +414,10 @@ static void process_child_line(struct kernel_sockets *socks, const struct jp_mes
 
     int target = *cell_index >= 0 ? *cell_index : output_count - 1;
     append_output(outputs, output_count, target, line);
-    publish_stream(socks->iopub, parent, target, line);
-    publish_stream(socks->iopub, parent, target, "\n");
+    if (target == run_index) {
+        publish_stream(socks->iopub, parent, target, line);
+        publish_stream(socks->iopub, parent, target, "\n");
+    }
 }
 
 static struct exec_result execute_cells(struct kernel_sockets *socks, const struct jp_message *parent,
@@ -511,7 +521,7 @@ static struct exec_result execute_cells(struct kernel_sockets *socks, const stru
                     *newline = '\0';
                     if (newline > line_start && newline[-1] == '\r') newline[-1] = '\0';
                     process_child_line(socks, parent, result.outputs, result.output_count,
-                        &current_cell, in_pipe[1], child, &result.interrupted, &start, line_start);
+                        &current_cell, in_pipe[1], child, &result.interrupted, &start, run_index, line_start);
                     line_start = newline + 1;
                 }
                 size_t remaining = strlen(line_start);
@@ -531,7 +541,7 @@ static struct exec_result execute_cells(struct kernel_sockets *socks, const stru
 
     if (pending.len > 0) {
         process_child_line(socks, parent, result.outputs, result.output_count,
-            &current_cell, in_pipe[1], child, &result.interrupted, &start, pending.data);
+            &current_cell, in_pipe[1], child, &result.interrupted, &start, run_index, pending.data);
     }
 
     close(in_pipe[1]);
