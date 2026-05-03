@@ -1,3 +1,7 @@
 build/
 runtime/
 .ipynb_checkpoints/
+animation/.venv/
+animation/media/
+animation/__pycache__/
+*.pyc

@@ -9,6 +9,7 @@ This project is a browser-based notebook clone for a Network Programming present
 - `src/kernel_worker.c` receives notebook cells, generates cumulative C source, compiles it, runs it with a timeout, and returns JSON results.
 - `web/` contains the static notebook UI.
 - `data/notebook.json` stores the saved notebook.
+- `animation/` contains a Manim scene for presenting the system flow.
 
 The browser never executes code. The C server sends execution requests to the ZeroMQ broker, and the C worker performs compile/run work.
 
@@ -143,6 +144,24 @@ Extra concept demos:
 ./build/zero_copy_demo
 ./build/transport_bridge_demo
 ```
+
+## Presentation Animation
+
+The Manim source lives in `animation/architecture_animation.py`. It follows the same simple architecture diagram: Browser UI, C HTTP server, ZeroMQ broker, C kernel worker, and generated C program.
+
+Render with the local animation environment:
+
+```bash
+animation/.venv/bin/python -m manim -qm --media_dir animation/media animation/architecture_animation.py ZeroMQNotebookArchitecture
+```
+
+Expected local output:
+
+```text
+animation/media/videos/architecture_animation/720p30/ZeroMQNotebookArchitecture.mp4
+```
+
+The rendered MP4 is intentionally ignored and should not be committed.
 
 ## Demo Script
 
