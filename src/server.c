@@ -471,7 +471,7 @@ int main(void) {
     struct sockaddr_in address;
     memset(&address, 0, sizeof(address));
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_addr.s_addr = htonl(INADDR_ANY);
     address.sin_port = htons(PORT);
 
     if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) == -1) {
@@ -484,6 +484,7 @@ int main(void) {
     }
 
     printf("Notebook clone server: http://127.0.0.1:%d\n", PORT);
+    printf("WSL/network access: http://<wsl-ip>:%d\n", PORT);
     printf("Connected as frontend to Jupyter-style ZeroMQ channels.\n");
     fflush(stdout);
 
