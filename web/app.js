@@ -5,6 +5,28 @@ const addButton = document.querySelector("#add-cell");
 const runAllButton = document.querySelector("#run-all");
 const saveButton = document.querySelector("#save");
 
+const cKeywords = new Set([
+  "auto", "break", "case", "const", "continue", "default", "do", "else",
+  "enum", "extern", "for", "goto", "if", "register", "return", "sizeof",
+  "static", "struct", "switch", "typedef", "union", "volatile", "while"
+]);
+
+const cTypes = new Set([
+  "char", "double", "float", "int", "long", "short", "signed", "unsigned",
+  "void", "size_t", "FILE", "pthread_t", "zmq_msg_t"
+]);
+
+const cFunctions = new Set([
+  "printf", "fprintf", "snprintf", "malloc", "calloc", "realloc", "free",
+  "memcpy", "memset", "strlen", "strcmp", "strdup", "system", "fopen",
+  "fclose", "fread", "fwrite", "zmq_ctx_new", "zmq_ctx_destroy",
+  "zmq_socket", "zmq_close", "zmq_setsockopt", "zmq_getsockopt",
+  "zmq_bind", "zmq_connect", "zmq_send", "zmq_recv", "zmq_msg_init",
+  "zmq_msg_init_size", "zmq_msg_init_data", "zmq_msg_data",
+  "zmq_msg_size", "zmq_msg_send", "zmq_msg_recv", "zmq_msg_close",
+  "zmq_poll", "zmq_proxy", "zmq_errno", "zmq_strerror"
+]);
+
 let notebook = {
   title: "ZeroMQ Notebook Clone",
   cells: []
@@ -21,6 +43,38 @@ function defaultCell() {
   return { code: "printf(\"hello zeromq notebook\\n\");", output: "", executionCount: null };
 }
 
+function escapeHtml(text) {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function span(className, text) {
+  return `<span class="${className}">${escapeHtml(text)}</span>`;
+}
+
+function highlightC(code) {
+  const tokenPattern = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/[^\n]*|\/\*[\s\S]*?\*\/|^\s*#\s*[a-zA-Z_]\w*|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/gm;
+  return code.replace(tokenPattern, (token) => {
+    const trimmed = token.trimStart();
+    if (trimmed.startsWith("#")) return span("tok-preprocessor", token);
+    if (token.startsWith("//") || token.startsWith("/*")) return span("tok-comment", token);
+    if (token.startsWith("\"") || token.startsWith("'")) return span("tok-string", token);
+    if (/^\d/.test(token)) return span("tok-number", token);
+    if (cKeywords.has(token)) return span("tok-keyword", token);
+    if (cTypes.has(token)) return span("tok-type", token);
+    if (cFunctions.has(token)) return span("tok-function", token);
+    return escapeHtml(token);
+  });
+}
+
+function syncHighlight(textarea, highlight) {
+  highlight.innerHTML = `${highlightC(textarea.value)}\n`;
+  highlight.scrollTop = textarea.scrollTop;
+  highlight.scrollLeft = textarea.scrollLeft;
+}
+
 function render() {
   cellsEl.textContent = "";
   notebook.cells.forEach((cell, index) => {
@@ -29,6 +83,7 @@ function render() {
     const inputPrompt = node.querySelector(".input-prompt");
     const outputPrompt = node.querySelector(".output-prompt");
     const textarea = node.querySelector("textarea");
+    const highlight = node.querySelector(".syntax-highlight");
     const output = node.querySelector(".output");
     const runButton = node.querySelector(".run-cell");
     const deleteButton = node.querySelector(".delete-cell");
@@ -39,9 +94,15 @@ function render() {
     outputPrompt.textContent = cell.output ? `Out[${count}]:` : "";
     textarea.value = cell.code || "";
     output.textContent = cell.output || "";
+    syncHighlight(textarea, highlight);
 
     textarea.addEventListener("input", () => {
       cell.code = textarea.value;
+      syncHighlight(textarea, highlight);
+    });
+
+    textarea.addEventListener("scroll", () => {
+      syncHighlight(textarea, highlight);
     });
 
     runButton.addEventListener("click", () => runCell(index));

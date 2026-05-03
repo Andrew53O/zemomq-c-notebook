@@ -16,6 +16,13 @@
   --output-bg: #ffffff;
   --danger: #b42318;
   --success: #2e7d32;
+  --code-keyword: #0000aa;
+  --code-type: #2b6f6f;
+  --code-function: #795e26;
+  --code-string: #a31515;
+  --code-comment: #008000;
+  --code-number: #098658;
+  --code-preprocessor: #af00db;
 }
 
 * {
@@ -254,24 +261,79 @@ main {
   color: var(--danger);
 }
 
+.code-surface {
+  position: relative;
+  min-height: 134px;
+  background: var(--code-bg);
+}
+
+.syntax-highlight,
 textarea {
   display: block;
   width: 100%;
   min-height: 134px;
-  resize: vertical;
   border: 0;
-  outline: 0;
   padding: 9px 11px;
-  background: var(--code-bg);
-  color: #111111;
   font-family: "Courier New", Consolas, monospace;
   font-size: 15px;
   line-height: 1.45;
   tab-size: 4;
+  white-space: pre-wrap;
+  overflow-wrap: normal;
+}
+
+.syntax-highlight {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  pointer-events: none;
+  overflow: hidden;
+  color: #111111;
+}
+
+textarea {
+  position: relative;
+  resize: vertical;
+  outline: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: #111111;
+  overflow: auto;
 }
 
 textarea:focus {
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.tok-keyword {
+  color: var(--code-keyword);
+  font-weight: 700;
+}
+
+.tok-type {
+  color: var(--code-type);
+  font-weight: 700;
+}
+
+.tok-function {
+  color: var(--code-function);
+}
+
+.tok-string {
+  color: var(--code-string);
+}
+
+.tok-comment {
+  color: var(--code-comment);
+  font-style: italic;
+}
+
+.tok-number {
+  color: var(--code-number);
+}
+
+.tok-preprocessor {
+  color: var(--code-preprocessor);
 }
 
 .output {
