@@ -1,13 +1,6 @@
-# Presentation Slide Content
+# Presentation Slide Content: ZMQBook C
 
-This file is the slide-by-slide version of `PRESENTATION.md`. It is designed for a 15-20 minute presentation where the slides contain pictures, Mermaid diagrams, short keywords, and project-specific examples.
-
-Use this format:
-
-- Put **On-slide text** directly on the slide.
-- Use **Visual** as the main diagram, screenshot, or animation.
-- Use **Project example** to explain how the concept appears in this mini C notebook clone.
-- Use **Speaker note** as your bilingual talking guide.
+This file is the slide-by-slide version of `presentation/PRESENTATION.md`. It is designed for a 15-20 minute presentation with short slide text, diagrams, and detailed bilingual speaker notes.
 
 ## Slide 1 - Title
 
@@ -16,657 +9,538 @@ Use this format:
 ZMQBook C  
 A tiny C notebook powered by ZeroMQ
 
-ZMQBook C  
 使用 ZeroMQ 的迷你 C Notebook
 
 **Visual**
 
-Use a screenshot of the notebook UI after it runs in the browser.
-
-```text
-http://127.0.0.1:8080
-```
-
-**Project example**
-
-This project looks like a small notebook in the browser, but internally it is a ZeroMQ system:
-
-- Browser UI: writes C cells.
-- C HTTP server: receives browser API requests.
-- ZeroMQ broker: routes execution jobs.
-- C kernel worker: compiles and runs the generated C program.
+Use a screenshot of the browser notebook UI.
 
 **Speaker note**
 
-English: Introduce the project as a notebook-like web app for running C snippets. The important part is not only the UI, but the backend architecture: C components communicate through ZeroMQ.
+English: This project is a browser notebook that runs C snippets. The main learning goal is not the UI itself, but how the backend uses Jupyter-style ZeroMQ channels.
 
-中文：介紹這是一個 notebook 風格的網頁應用，可以執行 C 程式片段。重點不只是 UI，而是後端架構：多個 C 元件透過 ZeroMQ 溝通。
+中文：這個專案是一個可以執行 C snippet 的 browser notebook。主要學習目標不是 UI 本身，而是後端如何使用 Jupyter-style ZeroMQ channels。
 
-## Slide 2 - Why Build This?
+---
 
-**On-slide text**
-
-Goal: make ZeroMQ visible through a real project
-
-目標：用真實專案呈現 ZeroMQ 概念
-
-**Visual**
-
-```mermaid
-flowchart LR
-    Concepts["ZeroMQ Concepts"] --> Project["Mini C Notebook"]
-    Project --> Demo["Live Demo"]
-    Demo --> Understanding["Audience Understanding"]
-```
-
-**Project example**
-
-Instead of only showing isolated socket examples, the project combines multiple ZeroMQ ideas in one workflow: run a C cell, send a job through a broker, execute it in a worker, and return output to the browser.
-
-**Speaker note**
-
-English: Explain that the project is a teaching tool. It does not try to replace Jupyter. It uses a notebook-like interface because the audience can easily understand the action: write code, click run, see output.
-
-中文：說明這個專案是教學工具，不是要取代 Jupyter。使用 notebook 形式是因為觀眾很容易理解：寫程式、按 Run、看到輸出。
-
-## Slide 3 - User View: Notebook UI
+## Slide 2 - Click Run Flow
 
 **On-slide text**
 
-- Add / delete cells
-- Run one cell
-- Run all cells
-- Save notebook
-- Show output per cell
+Run Cell = Shell request + IOPub output + Shell reply
 
-- 新增 / 刪除 cell
-- 執行單一 cell
-- 執行全部 cells
-- 儲存 notebook
-- 每個 cell 顯示自己的輸出
-
-**Visual**
-
-Use a screenshot of the browser UI. Highlight:
-
-- Code editor
-- Run button
-- Output panel
-- Execution counter
-
-**Project example**
-
-The browser only handles user interaction. It does not compile C and it does not use ZeroMQ directly. It sends HTTP API requests to the C server.
-
-**Speaker note**
-
-English: Start with what the user sees. This makes the backend easier to explain later because the audience knows what action triggers the system.
-
-中文：先從使用者看到的畫面開始。這樣後面介紹後端時，觀眾會知道是哪個使用者動作觸發整個系統。
-
-## Slide 4 - What Happens When We Click Run?
-
-**On-slide text**
-
-Run Cell = HTTP request + ZeroMQ request + compile/run + response
-
-按下 Run Cell = HTTP 請求 + ZeroMQ 請求 + 編譯執行 + 回傳結果
+按下 Run = Shell 請求 + IOPub 輸出 + Shell 回覆
 
 **Visual**
 
 ```mermaid
 sequenceDiagram
-    participant U as User
     participant B as Browser UI
-    participant S as C HTTP Server
-    participant Q as ZeroMQ Broker
-    participant W as C Kernel Worker
-    participant R as Runtime Process
+    participant S as C Server Bridge
+    participant K as C Kernel Worker
+    participant R as Generated C Program
 
-    U->>B: Click Run Cell
     B->>S: POST /api/cell/run
-    S->>Q: ZeroMQ run request
-    Q->>W: Route job
-    W->>R: Generate C, gcc compile, execute
-    R-->>W: stdout / stderr / exit code
-    W-->>Q: result message
-    Q-->>S: routed response
-    S-->>B: JSON result
-    B-->>U: update cell output
+    S->>K: Shell execute_request
+    K-->>S: IOPub status busy
+    K->>R: gcc compile + fork/exec
+    R-->>K: stdout/stderr
+    K-->>S: IOPub stream
+    K-->>S: Shell execute_reply
+    K-->>S: IOPub status idle
+    B->>S: GET /api/kernel/events
+    S-->>B: output events
 ```
 
 **Project example**
 
-If cell 0 contains:
+When the user runs:
 
 ```c
-int x = 42;
+printf("hello zeromq notebook\n");
 ```
 
-and cell 1 contains:
-
-```c
-printf("x = %d\n", x);
-```
-
-running cell 1 sends both cells to the worker, because the notebook state is cumulative.
+the browser sends HTTP to the C server. The C server sends ZeroMQ Shell `execute_request`. The kernel streams stdout through IOPub.
 
 **Speaker note**
 
-English: This is the main flow. Emphasize that one click in the browser becomes a distributed message path across multiple C programs.
+English: Start here because this is what the audience sees. One browser click becomes multiple messages across different ZeroMQ channels.
 
-中文：這是最重要的流程。強調瀏覽器的一次點擊，會變成多個 C 程式之間的分散式訊息傳遞。
+中文：從這裡開始，因為這是觀眾最容易理解的使用者動作。Browser 的一次點擊會變成不同 ZeroMQ channels 上的多個 messages。
 
-## Slide 5 - Simple System Architecture
+---
+
+## Slide 3 - System Architecture
 
 **On-slide text**
 
-Browser -> C Server -> ZeroMQ Broker -> C Worker -> Runtime -> Browser
+Browser -> C Server Bridge -> C Kernel -> Generated C Program
 
-瀏覽器 -> C Server -> ZeroMQ Broker -> C Worker -> 執行程式 -> 瀏覽器
+Browser -> C Server Bridge -> C Kernel -> 產生的 C 程式
 
 **Visual**
 
 ```mermaid
 flowchart LR
-    Browser["Browser UI<br/>HTML/CSS/JS"] -->|HTTP API| Server["C HTTP Server<br/>src/server.c"]
-    Server -->|ZeroMQ request| Broker["ZeroMQ Broker<br/>ROUTER/DEALER<br/>src/broker.c"]
-    Broker -->|shared queue| Worker["C Kernel Worker<br/>src/kernel_worker.c"]
-    Worker -->|gcc + run| Runtime["Generated C Program<br/>runtime/"]
-    Runtime -->|stdout/stderr| Worker
-    Worker --> Broker
-    Broker --> Server
-    Server -->|JSON output| Browser
+    Browser["Browser UI<br/>HTML/CSS/JS"]
+    Server["C HTTP Server<br/>ZeroMQ frontend bridge"]
+    Kernel["C Kernel Worker<br/>5 Jupyter-style sockets"]
+    Runtime["Generated C Program<br/>gcc + child process"]
+
+    Browser -->|HTTP API| Server
+    Server -->|Shell| Kernel
+    Kernel -->|IOPub| Server
+    Kernel -->|Stdin request| Server
+    Server -->|Stdin reply| Kernel
+    Server -->|Control| Kernel
+    Server <-->|Heartbeat| Kernel
+    Kernel --> Runtime
+    Runtime --> Kernel
+    Server -->|JSON events| Browser
 ```
 
 **Project example**
 
-This architecture separates responsibilities:
-
-- The browser is only UI.
-- The server is the HTTP bridge.
-- The broker is the ZeroMQ intermediary.
-- The worker is the execution engine.
-- The generated runtime process is where user C code actually runs.
+The browser does not talk to ZeroMQ directly. `src/server.c` is the bridge between HTTP and ZeroMQ.
 
 **Speaker note**
 
-English: Use this as the main architecture slide. The broker is important because it decouples the web server from the execution workers.
+English: The system has clear boundaries. Browser is UI, server is bridge, kernel owns sockets and execution, runtime is the child process running user C code.
 
-中文：這頁是主要架構圖。broker 很重要，因為它把 web server 和 execution worker 解耦。
+中文：系統邊界很清楚。Browser 是 UI，server 是 bridge，kernel 擁有 sockets 和 execution，runtime 是真正執行使用者 C code 的 child process。
 
-## Slide 6 - Socket API Lifecycle
+---
+
+## Slide 4 - The Five Channels
 
 **On-slide text**
 
-1. Create / destroy
-2. Configure
-3. Bind / connect
-4. Send / receive
-
-1. 建立 / 關閉
-2. 設定 socket
-3. 接上 topology
-4. 傳送 / 接收資料
+- Shell: execute code
+- IOPub: publish output
+- Stdin: ask user input
+- Control: interrupt/shutdown
+- Heartbeat: alive check
 
 **Visual**
 
 ```mermaid
 flowchart TD
-    A["zmq_ctx_new()"] --> B["zmq_socket()"]
-    B --> C["zmq_setsockopt()<br/>zmq_getsockopt()"]
-    C --> D["zmq_bind()<br/>zmq_connect()"]
-    D --> E["zmq_msg_send()<br/>zmq_msg_recv()"]
-    E --> F["zmq_close()"]
-    F --> G["zmq_ctx_destroy()"]
+    subgraph Frontend["C Server"]
+        ShellClient["Shell DEALER"]
+        IOPubClient["IOPub SUB"]
+        StdinClient["Stdin DEALER"]
+        ControlClient["Control DEALER"]
+        HBClient["Heartbeat REQ"]
+    end
+
+    subgraph Kernel["C Kernel Worker"]
+        ShellKernel["Shell ROUTER"]
+        IOPubKernel["IOPub PUB"]
+        StdinKernel["Stdin ROUTER"]
+        ControlKernel["Control ROUTER"]
+        HBKernel["Heartbeat REP"]
+    end
+
+    ShellClient <--> ShellKernel
+    IOPubKernel --> IOPubClient
+    StdinKernel <--> StdinClient
+    ControlClient <--> ControlKernel
+    HBClient <--> HBKernel
 ```
 
 **Project example**
 
-In the mini notebook:
-
-- `src/server.c` creates a ZeroMQ socket to send execution requests.
-- `src/broker.c` creates ROUTER and DEALER sockets.
-- `src/kernel_worker.c` creates a worker socket to receive jobs.
-- Shutdown code closes sockets and destroys contexts.
+Each channel has a separate purpose, so output, input, interrupts, and liveness checks do not all compete on one socket.
 
 **Speaker note**
 
-English: Connect this to Jimmy's Socket API part. The project uses the real ZeroMQ C API, so the lifecycle is visible in real code.
+English: This is the core slide. Real Jupyter separates responsibilities across sockets. Our project follows that idea in a simplified educational way.
 
-中文：把這頁連到 Jimmy 的 Socket API。這個專案使用真正的 ZeroMQ C API，所以 socket lifecycle 可以在程式碼中看到。
+中文：這是核心投影片。真正的 Jupyter 會把不同責任拆到不同 sockets。這個專案用簡化的教學方式跟著這個概念。
 
-## Slide 7 - Bind and Connect Topology
+---
 
-**On-slide text**
-
-`bind()` creates a stable endpoint  
-`connect()` joins that endpoint
-
-`bind()` 建立穩定 endpoint  
-`connect()` 連到 endpoint
-
-**Visual**
-
-```mermaid
-flowchart LR
-    Server["C HTTP Server<br/>connect frontend"]
-    Broker["Broker<br/>bind frontend<br/>bind backend"]
-    W1["Worker 1<br/>connect backend"]
-    W2["Worker 2<br/>connect backend"]
-
-    Server --> Broker
-    W1 --> Broker
-    W2 --> Broker
-```
-
-**Project example**
-
-In this project, the broker is the meeting point:
-
-- Broker binds the frontend endpoint used by the server.
-- Broker binds the backend endpoint used by workers.
-- Server connects to broker frontend.
-- Workers connect to broker backend.
-
-This means more workers can be started without changing the browser or server.
-
-**Speaker note**
-
-English: Explain that ZeroMQ topology is not the same as HTTP. `bind()` and `connect()` describe how nodes join the message topology.
-
-中文：說明 ZeroMQ topology 不等於 HTTP。`bind()` 和 `connect()` 是描述節點如何加入訊息拓樸。
-
-## Slide 8 - Request/Reply Behavior
+## Slide 5 - Shell Channel
 
 **On-slide text**
 
-Request: run selected notebook cells  
-Reply: return compile/runtime result
+Shell = normal code request/reply
 
-請求：執行選定 notebook cells  
-回覆：回傳編譯與執行結果
+- Frontend: `DEALER`
+- Kernel: `ROUTER`
+- Port: `7010`
 
 **Visual**
 
 ```mermaid
 sequenceDiagram
-    participant S as C HTTP Server
-    participant B as Broker
-    participant W as Worker
+    participant S as Server Shell DEALER
+    participant K as Kernel Shell ROUTER
 
-    S->>B: RUN_CELL request
-    B->>W: route request
-    W-->>B: RESULT response
-    B-->>S: route response
+    S->>K: kernel_info_request
+    K-->>S: kernel_info_reply
+    S->>K: execute_request
+    K-->>S: execute_reply
 ```
 
 **Project example**
 
-For the browser, the action is simple: "run this cell."  
-For the backend, it becomes a request/reply job:
-
-- Request data: command, cell index, notebook source.
-- Reply data: status, stdout, stderr, exit code, timeout flag.
-
-**Speaker note**
-
-English: The project behaves like request/reply even though the broker internally uses ROUTER/DEALER. The server sends work and expects exactly one result.
-
-中文：雖然 broker 內部使用 ROUTER/DEALER，但整體行為像 request/reply。server 送出工作，並期待一個結果。
-
-## Slide 9 - ROUTER/DEALER Shared Queue
-
-**On-slide text**
-
-Broker = intermediary + shared queue
-
-Broker = 中介者 + shared queue
-
-**Visual**
-
-```mermaid
-flowchart LR
-    S1["C HTTP Server"] --> R["ROUTER<br/>frontend"]
-    R <--> D["DEALER<br/>backend"]
-    D --> W1["Worker 1"]
-    D --> W2["Worker 2"]
-    D --> W3["Worker 3"]
-
-    subgraph Broker["src/broker.c"]
-        R
-        D
-    end
-```
-
-**Project example**
-
-If three students click Run at around the same time:
-
-- The server sends jobs to the broker.
-- The broker does not compile anything.
-- The broker forwards jobs to available workers.
-- Workers can be added dynamically.
-
-This demonstrates Andrew's intermediary, shared queue, dynamic discovery, and `zmq_proxy()` topics.
-
-**Speaker note**
-
-English: The broker lets us scale the execution side. The web server does not need to track worker addresses or worker count.
-
-中文：broker 讓 execution 端可以擴充。web server 不需要知道 worker 的 address，也不需要知道目前有幾個 worker。
-
-## Slide 10 - Multipart Messages in This Notebook
-
-**On-slide text**
-
-Notebook request = multiple frames
-
-command + cell index + cell source
-
-Notebook request = 多個 frames  
-command + cell index + cell source
-
-**Visual**
-
-```mermaid
-flowchart TD
-    Click["Run Cell 2"] --> Msg["ZeroMQ multipart message"]
-
-    Msg --> F1["Frame 1<br/>command: RUN_CELL"]
-    Msg --> F2["Frame 2<br/>target cell: 2"]
-    Msg --> F3["Frame 3<br/>cell 0 source<br/>int x = 42;"]
-    Msg --> F4["Frame 4<br/>cell 1 source<br/>printf(...)"]
-    Msg --> F5["Frame 5<br/>cell 2 source<br/>new code"]
-
-    F1 --> Worker["Worker receives frames"]
-    F2 --> Worker
-    F3 --> Worker
-    F4 --> Worker
-    F5 --> Worker
-    Worker --> Program["Generate one C program<br/>cells 0..2"]
-```
-
-**Project example**
-
-Example notebook:
-
-```c
-// Cell 0
-int x = 42;
-
-// Cell 1
-printf("x = %d\n", x);
-
-// Cell 2
-printf("done\n");
-```
-
-When running cell 2, the worker needs the selected cell index and all source code up to that cell. Multipart frames make this clear:
-
-- Frame 1 says what operation to perform.
-- Frame 2 says which cell is being run.
-- Later frames carry the C source snippets.
-- The receiver uses `zmq_msg_recv()` and checks `ZMQ_RCVMORE` to know whether more frames are coming.
-
-**Speaker note**
-
-English: This is the concrete answer to "where do multipart messages appear?" They appear in the run-cell job. Instead of sending one huge string, the request can be separated into command, metadata, and code frames. That matches ZeroMQ's message model and makes routing/parsing cleaner.
-
-中文：這頁回答「multipart messages 在專案中哪裡出現？」它出現在 run-cell job。request 不需要是一個很大的字串，而是可以分成 command、metadata、code frames。這符合 ZeroMQ 的訊息模型，也讓 routing 和 parsing 更清楚。
-
-## Slide 11 - Kernel Worker Pipeline
-
-**On-slide text**
-
-Cells become one generated C program  
-Running cell N compiles cells 0..N
-
-Cells 會變成一個產生出來的 C 程式  
-執行第 N 格 = 編譯 0 到 N 格
-
-**Visual**
-
-```mermaid
-flowchart TD
-    A["Receive RUN_CELL"] --> B["Parse frames / payload"]
-    B --> C["Generate C source"]
-    C --> D["Insert cell output markers"]
-    D --> E["gcc compile"]
-    E -->|success| F["Run binary with timeout"]
-    E -->|compile error| G["Return compiler stderr"]
-    F -->|success| H["Return stdout/stderr"]
-    F -->|timeout| I["Kill process and return timeout"]
-```
-
-**Project example**
-
-Generated program idea:
-
-```c
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-int main(void) {
-    printf("__CELL_START__:0\n");
-    int x = 42;
-    printf("__CELL_END__:0\n");
-
-    printf("__CELL_START__:1\n");
-    printf("x = %d\n", x);
-    printf("__CELL_END__:1\n");
-    return 0;
-}
-```
-
-The markers help the UI map runtime output back to notebook cells.
-
-**Speaker note**
-
-English: This explains how a C notebook can have cumulative state without keeping a long-running C interpreter. The worker rebuilds a program from the top.
-
-中文：這裡說明 C notebook 如何做到累積狀態，而不需要真正的長時間 C interpreter。worker 會從最上面的 cell 重新組出一個程式。
-
-## Slide 12 - Handling Multiple Sockets and Timeouts
-
-**On-slide text**
-
-`zmq_poll()` keeps services responsive
-
-`zmq_poll()` 讓服務不會永遠卡住
-
-**Visual**
-
-```mermaid
-flowchart TD
-    Loop["Service loop"] --> Poll["zmq_poll() with timeout"]
-    Poll -->|message ready| Handle["Receive and process"]
-    Poll -->|timeout| Check["Check shutdown / report unavailable"]
-    Poll -->|interrupt| Stop["Clean shutdown"]
-    Handle --> Loop
-    Check --> Loop
-```
-
-**Project example**
-
-In this mini notebook, blocking forever is bad:
-
-- If no worker is running, the server should report execution unavailable.
-- If user code runs forever, the worker should timeout and kill the child process.
-- If Ctrl-C is pressed, services should close sockets and exit.
-
-**Speaker note**
-
-English: Connect this to handling multiple sockets and application problem solving. Real systems need timeouts and shutdown paths, not only send and receive.
-
-中文：把這頁連到 handling multiple sockets 和 application problem solving。真實系統不只需要 send/receive，也需要 timeout 和 shutdown path。
-
-## Slide 13 - PUB/SUB Status Events
-
-**On-slide text**
-
-Status topic = message envelope
-
-Status topic = message envelope
-
-**Visual**
-
-```mermaid
-flowchart LR
-    Worker["Kernel Worker<br/>PUB"] -->|"worker.start"| Monitor["Status Monitor<br/>SUB"]
-    Worker -->|"compile.ok cell=2"| Monitor
-    Worker -->|"compile.error cell=2"| Monitor
-    Worker -->|"runtime.timeout cell=2"| Monitor
-```
-
-**Project example**
-
-Example status messages:
+The server sends:
 
 ```text
-worker.start worker-1
-compile.ok cell=2
-compile.error cell=2
-runtime.timeout cell=2
+execute_request
+content: code, run_index, cells
 ```
 
-The first word is the topic. A subscriber can choose only the messages it wants, such as `compile` events.
+The kernel replies:
+
+```text
+execute_reply
+content: status, execution_count, outputs
+```
 
 **Speaker note**
 
-English: Use this to explain Pub/Sub envelopes. The envelope is not a separate visual envelope; it is the topic prefix that lets subscribers filter messages.
+English: Shell is the main request/reply path. It is where the notebook asks the kernel to execute code and where the final execution status comes back.
 
-中文：用這頁解釋 Pub/Sub envelopes。envelope 不一定是視覺上的信封，而是 topic prefix，讓 subscriber 可以過濾訊息。
+中文：Shell 是主要 request/reply 路徑。Notebook 透過它要求 kernel 執行 code，最後 execution status 也從這裡回來。
 
-## Slide 14 - PAIR, Zero-Copy, Transport Bridge, HWM
+---
+
+## Slide 6 - IOPub Channel
 
 **On-slide text**
 
-Extra concepts connected to the project
+IOPub = output/status broadcast
 
-額外概念也能連回專案
+- Kernel: `PUB`
+- Frontend: `SUB`
+- Port: `7011`
 
 **Visual**
 
 ```mermaid
-mindmap
-  root((ZeroMQ Concepts))
-    PAIR
-      Thread signaling
-      Stop worker loop
-    Zero-copy
-      zmq_msg_init_data
-      cleanup callback
-    Transport bridge
-      tcp
-      ipc
-      inproc
-    HWM
-      queue limit
-      backpressure
+sequenceDiagram
+    participant K as Kernel IOPub PUB
+    participant S as Server IOPub SUB
+    participant B as Browser
+
+    K-->>S: status busy
+    K-->>S: execute_input
+    K-->>S: stream stdout
+    K-->>S: error
+    K-->>S: status idle
+    B->>S: poll events
 ```
 
 **Project example**
 
-- PAIR: signal between threads, for example "shutdown now".
-- Zero-copy: send a pre-existing buffer with `zmq_msg_init_data()`; the fourth argument is the free callback for cleanup.
-- Transport bridge: connect one side with `tcp://` and another with `ipc://`.
-- HWM: if compile jobs arrive faster than workers can run them, high-water mark limits queue growth.
-
-**Speaker note**
-
-English: These are supporting demos. They show that ZeroMQ is useful beyond the main request path.
-
-中文：這些是輔助 demo。它們說明 ZeroMQ 不只用在主要 request path，也可以處理 thread signaling、transport bridging 和 backpressure。
-
-## Slide 15 - Error Handling and Interrupts
-
-**On-slide text**
-
-Good demo behavior:
-
-- compile errors
-- runtime timeout
-- ZeroMQ errors
-- Ctrl-C shutdown
-
-好的 demo 行為：
-
-- 編譯錯誤
-- runtime timeout
-- ZeroMQ 錯誤
-- Ctrl-C 關閉
-
-**Visual**
-
-```mermaid
-flowchart TD
-    Error["Problem"] --> Compile["gcc compile error"]
-    Error --> Runtime["runtime timeout"]
-    Error --> ZMQ["zmq_errno()<br/>zmq_strerror()"]
-    Error --> Signal["Ctrl-C signal"]
-
-    Compile --> UI["Show error in cell"]
-    Runtime --> UI
-    ZMQ --> UI
-    Signal --> Shutdown["Close sockets<br/>Destroy context"]
-```
-
-**Project example**
-
-Compile error demo:
+When generated C prints:
 
 ```c
-printf("missing semicolon")
+printf("hello\n");
 ```
 
-Runtime timeout demo:
+the kernel publishes:
+
+```text
+stream.stdout -> {"text":"hello", "cell_index":0}
+```
+
+**Speaker note**
+
+English: IOPub is why output can appear while execution is happening. It is a one-way publish stream from kernel to frontend.
+
+中文：IOPub 讓 output 可以在 execution 進行中就出現。它是 kernel 到 frontend 的單向 publish stream。
+
+---
+
+## Slide 7 - Stdin Channel
+
+**On-slide text**
+
+Stdin = kernel asks browser for input
+
+- Kernel: `ROUTER`
+- Frontend: `DEALER`
+- Port: `7012`
+- Demo: `nb_input()`
+
+**Visual**
+
+```mermaid
+sequenceDiagram
+    participant R as Generated C Program
+    participant K as Kernel
+    participant S as Server
+    participant B as Browser
+
+    R->>K: __NB_INPUT__:Your name:
+    K->>S: input_request
+    S->>B: prompt event
+    B->>S: /api/stdin/reply
+    S->>K: input_reply
+    K->>R: answer to stdin pipe
+```
+
+**Project example**
+
+Cell code:
+
+```c
+char name[64];
+nb_input("Your name: ", name, sizeof name);
+printf("hello %s\n", name);
+```
+
+The browser shows a prompt modal and sends the answer back through the Stdin channel.
+
+**Speaker note**
+
+English: Stdin is the best channel to explain interactivity. The kernel pauses execution, asks the frontend for data, then resumes the generated C program.
+
+中文：Stdin 是最適合解釋互動性的 channel。Kernel 暫停 execution，向 frontend 要資料，然後讓 generated C program 繼續執行。
+
+---
+
+## Slide 8 - Control Channel
+
+**On-slide text**
+
+Control = high-priority commands
+
+- Frontend: `DEALER`
+- Kernel: `ROUTER`
+- Port: `7013`
+- Interrupt / shutdown
+
+**Visual**
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant S as Server Control DEALER
+    participant K as Kernel Control ROUTER
+    participant R as Running C Program
+
+    B->>S: click Interrupt
+    S->>K: interrupt_request
+    K->>R: terminate child process
+    K-->>S: interrupt_reply
+    K-->>S: IOPub status idle
+```
+
+**Project example**
+
+Run:
 
 ```c
 while (1) {}
 ```
 
-The project should show a clear error instead of silently failing or hanging.
+Then click Interrupt. The Control channel stops the child process without waiting for Shell execution to finish normally.
 
 **Speaker note**
 
-English: Explain that error handling is part of the architecture. This makes the live demo understandable and prevents one bad cell from stopping the whole presentation.
+English: Control is separated from Shell so an interrupt can still be delivered while code is running. This is why notebooks can stop long-running cells.
 
-中文：說明 error handling 是架構的一部分。這讓 live demo 更容易理解，也避免一個錯誤 cell 讓整個展示卡住。
+中文：Control 和 Shell 分開，所以 code 正在執行時仍然可以送 interrupt。這就是 notebook 可以停止長時間執行 cell 的原因。
 
-## Slide 16 - Live Demo Script
+---
+
+## Slide 9 - Heartbeat Channel
 
 **On-slide text**
 
-1. Start broker
-2. Start worker
-3. Start server
-4. Open browser
-5. Run C cells
+Heartbeat = is the kernel alive?
 
-1. 啟動 broker
-2. 啟動 worker
-3. 啟動 server
-4. 開啟 browser
-5. 執行 C cells
+- Frontend: `REQ`
+- Kernel: `REP`
+- Port: `7014`
+- Raw ping/pong
+
+**Visual**
+
+```mermaid
+sequenceDiagram
+    participant S as Server Heartbeat REQ
+    participant K as Kernel Heartbeat REP
+
+    S->>K: ping
+    K-->>S: ping
+```
+
+**Project example**
+
+Browser/server API:
+
+```text
+GET /api/kernel/heartbeat
+```
+
+Response:
+
+```json
+{"ok":true,"alive":true}
+```
+
+**Speaker note**
+
+English: Heartbeat does not execute code. It only checks whether the kernel process is responding.
+
+中文：Heartbeat 不執行 code。它只檢查 kernel process 是否還有回應。
+
+---
+
+## Slide 10 - Jupyter Multipart Message Format
+
+**On-slide text**
+
+Jupyter ZeroMQ message frames:
+
+```text
+idents...
+<IDS|MSG>
+signature
+header
+parent_header
+metadata
+content
+```
 
 **Visual**
 
 ```mermaid
 flowchart TD
-    A["Terminal 1<br/>./build/broker"] --> B["Terminal 2<br/>./build/kernel_worker"]
-    B --> C["Terminal 3<br/>./build/server"]
-    C --> D["Browser<br/>http://127.0.0.1:8080"]
-    D --> E["Run hello world"]
-    E --> F["Run cumulative cells"]
-    F --> G["Show compile error"]
-    G --> H["Show timeout"]
+    M["Multipart Message"] --> I["Identity frames"]
+    M --> D["<IDS|MSG>"]
+    M --> Sig["Signature<br/>empty in this demo"]
+    M --> H["Header JSON"]
+    M --> P["Parent Header JSON"]
+    M --> Meta["Metadata JSON"]
+    M --> C["Content JSON"]
 ```
 
 **Project example**
 
-Recommended live cells:
+`src/jupyter_proto.c` builds and parses these frames. Empty HMAC key is used for classroom simplicity.
+
+**Speaker note**
+
+English: This is where multipart messages appear now. Instead of only `RUN + JSON`, the project uses Jupyter-style multipart frames.
+
+中文：現在 multipart messages 出現在這裡。專案不只是 `RUN + JSON`，而是使用 Jupyter-style multipart frames。
+
+---
+
+## Slide 11 - Cumulative C Execution
+
+**On-slide text**
+
+Running cell N = compile cells `0..N`
+
+執行第 N 格 = 編譯第 0 到第 N 格
+
+**Visual**
+
+```mermaid
+flowchart TD
+    Cells["Notebook cells 0..N"] --> Source["Generated C source"]
+    Source --> GCC["gcc compile"]
+    GCC --> Child["fork/exec child process"]
+    Child --> Pipe["stdout/stderr pipe"]
+    Pipe --> IOPub["IOPub stream"]
+```
+
+**Project example**
+
+Cell 0:
+
+```c
+int x = 42;
+```
+
+Cell 1:
+
+```c
+printf("x = %d\n", x);
+```
+
+Running cell 1 compiles both cells into one generated C program.
+
+**Speaker note**
+
+English: This is how the project creates notebook-like state in C without a real C interpreter.
+
+中文：這是專案在沒有真正 C interpreter 的情況下，做出 notebook-like state 的方法。
+
+---
+
+## Slide 12 - zmq_poll and Responsiveness
+
+**On-slide text**
+
+`zmq_poll()` lets the kernel handle:
+
+- Shell requests
+- Control interrupts
+- Heartbeat pings
+- child process output
+
+**Visual**
+
+```mermaid
+flowchart TD
+    Poll["zmq_poll()"] --> Shell["Shell"]
+    Poll --> Control["Control"]
+    Poll --> HB["Heartbeat"]
+    Poll --> Output["Child stdout/stderr"]
+```
+
+**Project example**
+
+During `while (1) {}`, the kernel still checks the Control socket, so Interrupt can stop the child process.
+
+**Speaker note**
+
+English: Real services cannot block forever on one receive call. Polling is how the kernel remains responsive.
+
+中文：真實服務不能永遠 block 在一個 receive call 上。Polling 讓 kernel 保持 responsive。
+
+---
+
+## Slide 13 - Live Demo
+
+**On-slide text**
+
+Run:
+
+```bash
+./build/kernel_worker
+./build/server
+```
+
+Open:
+
+```text
+http://127.0.0.1:8080
+```
+
+**Visual**
+
+```mermaid
+flowchart TD
+    A["Terminal 1<br/>kernel_worker"] --> B["Terminal 2<br/>server"]
+    B --> C["Browser UI"]
+    C --> D["hello output"]
+    D --> E["cumulative x"]
+    E --> F["nb_input prompt"]
+    F --> G["interrupt infinite loop"]
+```
+
+**Project example**
+
+Demo cells:
 
 ```c
 printf("hello zeromq notebook\n");
@@ -674,154 +548,124 @@ printf("hello zeromq notebook\n");
 
 ```c
 int x = 42;
+printf("x is ready\n");
 ```
 
 ```c
 printf("x = %d\n", x);
 ```
 
+```c
+char name[64];
+nb_input("Your name: ", name, sizeof name);
+printf("hello %s\n", name);
+```
+
+```c
+while (1) {}
+```
+
 **Speaker note**
 
-English: Keep this slide visible during the demo so the audience understands which terminal belongs to which system component.
+English: Keep this slide visible during the demo. It shows the exact order and which channel each demo highlights.
 
-中文：demo 時可以保留這頁，讓觀眾知道每個 terminal 對應哪個系統元件。
+中文：Demo 時可以保留這頁。它顯示展示順序，也能說明每個 demo 對應哪個 channel。
 
-## Slide 17 - Architecture Animation
+---
+
+## Slide 14 - Extra ZeroMQ Concepts
 
 **On-slide text**
 
-Request path and response path
+Extra demos:
 
-請求路徑與回覆路徑
+- `broker`: ROUTER/DEALER proxy
+- `pair_signal_demo`: PAIR + inproc
+- `zero_copy_demo`: `zmq_msg_init_data()`
+- `transport_bridge_demo`: TCP to IPC
 
 **Visual**
 
-Use the Manim architecture animation.
-
-```bash
-animation/.venv/bin/python -m manim -qm --media_dir animation/media animation/architecture_animation.py ZeroMQNotebookArchitecture
-```
-
-Expected local video:
-
-```text
-animation/media/videos/architecture_animation/720p30/ZeroMQNotebookArchitecture.mp4
+```mermaid
+mindmap
+  root((Extra Concepts))
+    ROUTER/DEALER
+      broker
+      zmq_proxy
+    PAIR
+      thread signaling
+    Zero-copy
+      free callback
+    Transport bridge
+      tcp
+      ipc
 ```
 
 **Project example**
 
-The animation should show:
-
-1. Browser sends run request.
-2. Server passes it into ZeroMQ.
-3. Broker routes it to worker.
-4. Worker compiles and runs C.
-5. Result flows back to browser.
+The main notebook no longer needs `broker`, but the binary remains as a presentation demo for shared queue and proxy concepts.
 
 **Speaker note**
 
-English: Use the animation to make the invisible message flow visible. It helps the audience see direction and responsibility.
+English: These extra binaries connect the project back to the other Chapter 2 concepts beyond Jupyter-style channels.
 
-中文：用動畫把看不見的 message flow 視覺化。它可以幫助觀眾看懂方向和每個元件的責任。
+中文：這些額外 binary 可以把專案連回 Chapter 2 中除了 Jupyter-style channels 以外的概念。
 
-## Slide 18 - Mapping to Presentation Concepts
+---
+
+## Slide 15 - Closing
 
 **On-slide text**
 
-Project feature -> ZeroMQ concept
+ZeroMQ socket types define behavior.
 
-專案功能 -> ZeroMQ 概念
+Jupyter-style channels make notebook communication clear.
 
 **Visual**
 
 ```mermaid
 flowchart LR
-    Run["Run Cell"] --> ReqRep["Request/Reply"]
-    Broker["Broker"] --> RouterDealer["ROUTER/DEALER + zmq_proxy"]
-    Cells["Cell payload"] --> Multipart["Multipart Messages"]
-    Worker["Kernel Worker"] --> Lifecycle["Socket API Lifecycle"]
-    Monitor["Status Monitor"] --> PubSub["PUB/SUB Envelope"]
-    Shutdown["Ctrl-C"] --> ErrorHandling["Polling + Error Handling"]
+    Shell["Shell"] --> Exec["Execute"]
+    IOPub["IOPub"] --> Output["Output"]
+    Stdin["Stdin"] --> Input["Input"]
+    Control["Control"] --> Stop["Interrupt"]
+    Heartbeat["Heartbeat"] --> Alive["Alive?"]
 ```
 
 **Project example**
 
-This slide is the summary:
-
-- Socket API: all backend components create/configure/connect/send/receive/close sockets.
-- Topology: broker binds; server and workers connect.
-- Messaging patterns: request/reply, ROUTER/DEALER, PUB/SUB, PAIR.
-- Problem solving: proxy, shared queue, polling, timeout, error reporting.
+The final notebook is simple on screen, but internally it demonstrates multiple ZeroMQ socket patterns in one project.
 
 **Speaker note**
 
-English: This is the bridge back to your original Chapter 2 material. Every major concept has a place in the project.
+English: Close by emphasizing that this is not full Jupyter, but it demonstrates the core ZeroMQ communication model clearly.
 
-中文：這頁把專案連回原本 Chapter 2 的簡報內容。每個主要概念都能在專案中找到位置。
+中文：結尾強調這不是完整 Jupyter，但它清楚展示了 ZeroMQ 核心通訊模型。
 
-## Slide 19 - Closing
+---
 
-**On-slide text**
+## Backup Slide - Channel Summary Table
 
-ZeroMQ is not just sockets.  
-It is a messaging architecture toolkit.
+| Channel | Frontend socket | Kernel socket | What it does |
+| --- | --- | --- | --- |
+| Shell | `DEALER` | `ROUTER` | Code execution request/reply |
+| IOPub | `SUB` | `PUB` | Output, status, errors |
+| Stdin | `DEALER` | `ROUTER` | Browser input for running code |
+| Control | `DEALER` | `ROUTER` | Interrupt and shutdown |
+| Heartbeat | `REQ` | `REP` | Liveness ping/pong |
 
-ZeroMQ 不只是 sockets。  
-它是一個 messaging architecture toolkit。
-
-**Visual**
-
-```mermaid
-flowchart LR
-    Browser["Notebook UI"] --> Server["C Server"]
-    Server --> Broker["ZeroMQ Broker"]
-    Broker --> Worker["C Worker"]
-    Worker --> Browser
-```
-
-**Project example**
-
-The final product is a mini notebook, but the real lesson is how ZeroMQ helps separate components, route messages, support workers, and return results.
-
-**Speaker note**
-
-English: Close by saying the notebook is the demo, but ZeroMQ architecture is the learning target.
-
-中文：結尾說 notebook 是 demo 成果，但真正的學習目標是 ZeroMQ architecture。
-
-## Optional Backup Slide - Files in the Project
-
-**On-slide text**
-
-Important files:
-
-- `src/server.c`
-- `src/broker.c`
-- `src/kernel_worker.c`
-- `web/app.js`
-- `animation/architecture_animation.py`
-
-**Visual**
+## Backup Slide - Important Files
 
 ```mermaid
 flowchart TD
-    Repo["Project Repository"] --> Src["src/"]
+    Repo["Project"] --> Src["src/"]
     Repo --> Web["web/"]
+    Repo --> Tests["tests/"]
     Repo --> Data["data/"]
-    Repo --> Animation["animation/"]
     Src --> Server["server.c"]
-    Src --> Broker["broker.c"]
-    Src --> Worker["kernel_worker.c"]
-    Web --> UI["index.html / styles.css / app.js"]
-    Animation --> Manim["architecture_animation.py"]
+    Src --> Kernel["kernel_worker.c"]
+    Src --> Proto["jupyter_proto.c/h"]
+    Web --> UI["index.html / app.js / styles.css"]
+    Tests --> Smoke["smoke_jupyter_channels.py"]
+    Data --> Conn["kernel-connection.json"]
 ```
-
-**Project example**
-
-Use this slide if someone asks where the implementation lives.
-
-**Speaker note**
-
-English: This is a backup slide for code walkthrough questions.
-
-中文：這是備用投影片，可以用來回答程式碼檔案分布的問題。
