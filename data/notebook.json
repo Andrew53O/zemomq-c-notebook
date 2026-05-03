@@ -1,0 +1,17 @@
+{
+  "title": "ZeroMQ Notebook Clone",
+  "cells": [
+    {
+      "code": "int x = 42;\nprintf(\"x is ready\\n\");",
+      "output": ""
+    },
+    {
+      "code": "printf(\"x = %d\\n\", x);",
+      "output": ""
+    },
+    {
+      "code": "for (int i = 0; i < 3; i++) {\n    printf(\"cell loop %d\\n\", i);\n}",
+      "output": ""
+    }
+  ]
+}
