@@ -1,0 +1,12 @@
+{
+  "shell_port": 7010,
+  "iopub_port": 7011,
+  "stdin_port": 7012,
+  "control_port": 7013,
+  "hb_port": 7014,
+  "ip": "127.0.0.1",
+  "transport": "tcp",
+  "key": "",
+  "signature_scheme": "hmac-sha256",
+  "kernel_name": "zmqbook-c"
+}
